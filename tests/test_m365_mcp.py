@@ -93,11 +93,18 @@ def test_a_prose_note_is_kept_rather_than_dropped(monkeypatch):
     assert "partial" in page.notes[0]
 
 
-def test_an_unrecognised_block_raises_instead_of_being_skipped(monkeypatch):
-    """Skipping it would make a moved payload look exactly like a quiet week."""
-    monkeypatch.setattr(m365_mcp, "_rpc", rpc_returning(answer({"somethingNew": 1})))
-    with pytest.raises(m365_mcp.M365Error, match="unrecognised"):
-        m365_mcp.call("outlook_calendar_search")
+def test_an_unrecognised_block_makes_the_answer_partial(monkeypatch):
+    """Skipping it silently would make a moved payload look exactly like a quiet
+    week. Raising would let one new metadata block break every run. It becomes a
+    note instead, which the calendar reader turns into degraded."""
+    monkeypatch.setattr(
+        m365_mcp,
+        "_rpc",
+        rpc_returning(answer({"somethingNew": 1}, {"totalResultCount": 0})),
+    )
+    page = m365_mcp.call("outlook_calendar_search")
+    assert page.items == []
+    assert "unrecognised" in page.notes[0]
 
 
 def test_a_tool_level_error_is_raised_with_its_text(monkeypatch):
@@ -242,3 +249,25 @@ def test_the_secret_can_arrive_as_an_env_var_instead_of_a_file(monkeypatch, tmp_
 
     assert m365_mcp.token().startswith("header.")
     assert cache.exists()
+
+
+def test_every_request_carries_a_fresh_json_rpc_id(monkeypatch):
+    seen = []
+
+    def _urlopen_capture(url, *, data, headers=None, timeout):
+        seen.append(json.loads(data)["id"])
+        raise m365_mcp.M365Error("stop here")
+
+    monkeypatch.setattr(m365_mcp, "_urlopen", _urlopen_capture)
+    monkeypatch.setattr(m365_mcp, "token", lambda **_: "t")
+    for _ in range(2):
+        with pytest.raises(m365_mcp.M365Error):
+            m365_mcp._rpc("tools/call", {})
+    assert seen[0] != seen[1]
+
+
+def test_a_non_https_url_is_refused(monkeypatch):
+    """M365_MCP_URL and M365_TENANT both come from the environment, and urllib
+    speaks file:// — which would turn a token request into a local file read."""
+    with pytest.raises(m365_mcp.M365Error, match="non-https"):
+        m365_mcp._urlopen("file:///etc/passwd", data=b"", timeout=1)

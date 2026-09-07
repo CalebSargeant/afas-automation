@@ -418,9 +418,12 @@ client does `''.join(b['text'] for b in content)`, which produces
 prose note that was the only statement that the answer is partial.
 
 Parse each block separately and classify it. `m365_mcp.call()` does that and
-**raises** on a block it does not recognise, rather than skipping it: a moved
-payload format that skipped quietly would look exactly like a week with no desk
-bookings, which is COMMON_MISTAKES #8 wearing a different hat.
+records a block it cannot place as a **note**, which marks the search
+incomplete, which `read_range` turns into `degraded`. Neither extreme is right:
+skipping it quietly would look exactly like a week with no desk bookings, which
+is COMMON_MISTAKES #8 wearing a different hat, and raising would let one new
+metadata block Anthropic adds -- at an endpoint they own and do not document --
+break every classification run outright.
 
 The footer is also not one fixed shape. A single-page answer ends
 `{"totalResultCount": 12}` with no `nextOffset` at all; a paged one ends

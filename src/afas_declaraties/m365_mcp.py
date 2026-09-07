@@ -30,9 +30,11 @@ gitignored and belongs in the secret store, never in the image.
 from __future__ import annotations
 
 import base64
+import itertools
 import json
 import logging
 import os
+import re
 import shutil
 import sys
 import time
@@ -61,6 +63,11 @@ MCP_URL = os.environ.get("M365_MCP_URL", "https://microsoft365.mcp.claude.com/mc
 TENANT = os.environ.get("M365_TENANT", "organizations")
 MCP_PROTOCOL_VERSION = "2025-06-18"
 
+#: A tenant is one path segment: a GUID, a verified domain, or one of Entra's
+#: aliases. Interpolating anything else into the authority URL would let an
+#: environment variable steer the token request somewhere else entirely.
+_TENANT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+
 #: Where the refresh token lives. In the cluster this is a writable path under
 #: /tmp, seeded once per run from the secret; see :func:`_cache_path`.
 CACHE = Path(os.path.expanduser(os.environ.get("M365_TOKEN_CACHE", "~/.m365-mcp-token.json")))
@@ -70,6 +77,9 @@ SEED = os.environ.get("M365_TOKEN_SEED", "")
 #: credential here rides the release Secret through envFrom, and one env var
 #: beats a bespoke volume mount plus a projection of a single key.
 SEED_JSON = os.environ.get("M365_TOKEN_JSON", "")
+
+if not _TENANT_RE.match(TENANT):
+    raise ValueError(f"M365_TENANT is not a single URL path segment: {TENANT!r}")
 
 _AUTH = f"https://login.microsoftonline.com/{TENANT}/oauth2/v2.0"
 
@@ -94,10 +104,25 @@ class M365AuthError(M365Error):
 # ---------------------------------------------------------------------------
 
 
+def _urlopen(url: str, *, data: bytes, headers: dict | None = None, timeout: int):
+    """Open an **https** URL, and nothing else.
+
+    Both URLs this module opens are assembled from environment variables --
+    ``M365_MCP_URL`` and ``M365_TENANT`` -- and urllib also speaks ``file://``
+    and ``ftp://``. Without this check a mistyped or hostile variable turns a
+    token request into a local file read whose contents are then posted onward.
+    """
+    if not url.startswith("https://"):
+        raise M365Error(f"refusing to open a non-https URL: {url[:60]!r}")
+    request = urllib.request.Request(url, data=data, headers=headers or {})
+    # nosec B310 - the scheme is checked immediately above
+    return urllib.request.urlopen(request, timeout=timeout)  # noqa: S310  # nosemgrep
+
+
 def _post_form(url: str, data: dict) -> dict:
-    request = urllib.request.Request(url, data=urllib.parse.urlencode(data).encode())
+    body = urllib.parse.urlencode(data).encode()
     try:
-        with urllib.request.urlopen(request, timeout=30) as response:
+        with _urlopen(url, data=body, timeout=30) as response:
             return json.loads(response.read().decode())
     except urllib.error.HTTPError as exc:
         # Entra reports OAuth failures as 4xx with the detail in the body, so
@@ -128,12 +153,14 @@ def _cache_path() -> Path:
         CACHE.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(SEED, CACHE)
         CACHE.chmod(0o600)
-        logger.info("m365: seeded the token cache from %s", SEED)
+        # The path, never the contents. Nothing in this module logs a
+        # token, an authorisation header or a device code.
+        logger.info("m365: cache seeded from %s", SEED)
     elif SEED_JSON.strip():
         CACHE.parent.mkdir(parents=True, exist_ok=True)
         CACHE.write_text(SEED_JSON)
         CACHE.chmod(0o600)
-        logger.info("m365: seeded the token cache from M365_TOKEN_JSON")
+        logger.info("m365: cache seeded from the environment")
     return CACHE
 
 
@@ -259,20 +286,30 @@ def token(*, allow_device_code: bool = False) -> str:
 _initialised = False
 
 
+#: JSON-RPC ids have to be unique within a session. The connector is stateless
+#: and answers one request per POST, so reusing 1 happens to work -- but a
+#: server that starts rejecting duplicates would fail on the second call with an
+#: error naming neither the id nor this module.
+_request_id = itertools.count(1)
+
+
 def _rpc(method: str, params: dict) -> dict:
-    body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": method, "params": params}).encode()
-    request = urllib.request.Request(
-        MCP_URL,
-        data=body,
-        headers={
-            "Authorization": "Bearer " + token(),
-            "Content-Type": "application/json",
-            "Accept": "application/json, text/event-stream",
-            "MCP-Protocol-Version": MCP_PROTOCOL_VERSION,
-        },
-    )
+    body = json.dumps(
+        {"jsonrpc": "2.0", "id": next(_request_id), "method": method, "params": params}
+    ).encode()
     try:
-        with urllib.request.urlopen(request, timeout=120) as response:
+        response = _urlopen(
+            MCP_URL,
+            data=body,
+            headers={
+                "Authorization": "Bearer " + token(),
+                "Content-Type": "application/json",
+                "Accept": "application/json, text/event-stream",
+                "MCP-Protocol-Version": MCP_PROTOCOL_VERSION,
+            },
+            timeout=120,
+        )
+        with response:
             raw = response.read().decode()
     except urllib.error.HTTPError as exc:
         raise M365Error(f"MCP HTTP {exc.code}: {exc.read().decode()[:300]}") from exc
@@ -335,9 +372,12 @@ _FOOTER_KEYS = {"nextOffset", "moreResults", "totalResultCount", "nextCursor"}
 def call(tool: str, **arguments) -> Page:
     """Call one connector tool and take its content blocks apart.
 
-    An unrecognised block raises rather than being skipped. A tool whose output
-    format moved would otherwise look exactly like a quiet week in the calendar,
-    and this repository has already paid for that mistake once.
+    An unrecognised block is recorded as a note, which marks the whole search
+    incomplete, which the calendar reader turns into ``degraded``. Neither
+    extreme is right here: skipping it silently would make a moved payload look
+    exactly like a quiet week in the calendar, and raising would let one new
+    metadata block Anthropic adds -- at an endpoint they own and do not document
+    -- break every classification run outright.
     """
     _handshake()
     result = _rpc("tools/call", {"name": tool, "arguments": arguments})
@@ -367,7 +407,8 @@ def call(tool: str, **arguments) -> Page:
             page.next_offset = parsed.get("nextOffset")
             page.total = parsed.get("totalResultCount")
         else:
-            raise M365Error(f"{tool}: unrecognised content block {sorted(parsed)}")
+            logger.error("m365: %s returned an unrecognised block %s", tool, sorted(parsed))
+            page.notes.append(f"unrecognised content block: {sorted(parsed)}")
     return page
 
 
