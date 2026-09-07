@@ -79,6 +79,26 @@ portal to drive and config refuses to build.
 
 {{/*
 ---------------------------------------------------------------------------
+Calendar source.
+
+An unrecognised value would be refused by config.py at runtime, which means at
+23:30 with nobody watching. And "mcp" with no token is worse than a crash: the
+connector call fails, the reader reports the window degraded, and every day in
+it lands in needs_input — a month of Slack questions caused by a missing
+secret, with nothing in the message that says so.
+--------------------------------------------------------------------------- */}}
+{{- $calendarSource := .Values.config.calendarSource | toString | lower }}
+{{- if not (has $calendarSource (list "owa" "mcp")) }}
+{{- fail (printf "config.calendarSource must be \"owa\" or \"mcp\", got %q. config.py refuses anything else, so every workload would exit 2 at its scheduled time." .Values.config.calendarSource) }}
+{{- end }}
+{{- if eq $calendarSource "mcp" }}
+{{- if not (or $opaqueSecret (has "M365_TOKEN_JSON" $declared) (has "M365_TOKEN_SEED" $declared)) }}
+{{- fail "config.calendarSource is \"mcp\" but nothing supplies M365_TOKEN_JSON. Run `python -m afas_declaraties.m365_mcp login` once, put the resulting JSON in the vault, and add M365_TOKEN_JSON to externalSecret.data. Without it the calendar read fails, every day in the window is recorded needs_input, and the only clue is a stack trace in a CronJob log." }}
+{{- end }}
+{{- end }}
+
+{{/*
+---------------------------------------------------------------------------
 The money guard.
 
 DRY_RUN=false means `build` files a real verzameldeclaratie. The approver

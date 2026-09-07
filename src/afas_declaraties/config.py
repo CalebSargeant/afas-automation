@@ -46,6 +46,18 @@ class Config:
     booking_prefixes: tuple[str, ...]
     excluded_dates: frozenset[date] = field(default_factory=frozenset)
 
+    #: Where the calendar is read from. ``owa`` drives Outlook Web with
+    #: Playwright; ``mcp`` reads it over the Microsoft 365 MCP connector and
+    #: needs no browser at all. There is deliberately no automatic fallback
+    #: between them: silently swapping the source a claim is derived from is
+    #: how "the read failed" turns into "there were no office days".
+    calendar_source: str = "owa"
+    #: The zone a calendar event's local date is decided in.
+    timezone: str = "Europe/Amsterdam"
+    #: Treat a working window with no calendar entries at all as a question
+    #: rather than as evidence. See :func:`calendar_mcp.read_range`.
+    require_calendar_events: bool = True
+
     #: Page slugs, configurable because they are publication names chosen by
     #: the employer and differ per environment.
     commute_page: str = ""
@@ -75,6 +87,14 @@ class Config:
             if d.strip()
         )
 
+        # An unrecognised source is refused rather than defaulted. Quietly
+        # falling back to the browser because CALENDAR_SOURCE was misspelt
+        # would look like the setting had been ignored, which is exactly the
+        # kind of thing nobody notices until a month of claims is wrong.
+        source = os.environ.get("CALENDAR_SOURCE", "owa").strip().lower()
+        if source not in {"owa", "mcp"}:
+            raise ConfigError(f"CALENDAR_SOURCE must be 'owa' or 'mcp', not {source!r}")
+
         return cls(
             database_url=_require("DATABASE_URL"),
             insite_host=_require("INSITE_HOST"),
@@ -99,6 +119,9 @@ class Config:
             excluded_dates=excluded,
             commute_page=_require("COMMUTE_PAGE_PATH"),
             home_page=_require("HOME_PAGE_PATH"),
+            calendar_source=source,
+            timezone=os.environ.get("TZ", "Europe/Amsterdam"),
+            require_calendar_events=_bool("REQUIRE_CALENDAR_EVENTS", True),
         )
 
     def require_slack(self) -> None:

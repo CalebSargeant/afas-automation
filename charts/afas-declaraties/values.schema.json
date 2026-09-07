@@ -146,6 +146,34 @@
             }
           ]
         },
+        "calendarSource": {
+          "type": "string",
+          "description": "\"owa\" drives Outlook Web with Chromium; \"mcp\" reads the calendar over the Microsoft 365 MCP connector and needs no browser, but needs M365_TOKEN_JSON in the vault. There is no fallback between them: swapping the source a claim is derived from without saying so is how \"the read failed\" becomes \"there were no office days\".",
+          "enum": [
+            "owa",
+            "mcp"
+          ]
+        },
+        "requireCalendarEvents": {
+          "description": "Treat a working window with no calendar entries at all as a question rather than as evidence of a week spent at home.",
+          "oneOf": [
+            {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ]
+            },
+            {
+              "type": "boolean"
+            }
+          ]
+        },
+        "m365TokenCache": {
+          "type": "string",
+          "description": "Must be under a writable volume; the root filesystem is read-only and Entra rotates the refresh token on use.",
+          "pattern": "^/"
+        },
         "browserProfileDir": {
           "type": "string",
           "description": "Must be under a writable volume; the root filesystem is read-only.",

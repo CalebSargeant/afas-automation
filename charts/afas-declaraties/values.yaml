@@ -87,6 +87,32 @@ config:
 
   headless: true
 
+  # Where the calendar is read from.
+  #
+  #   owa  drive Outlook Web with Chromium as the signed-in user
+  #   mcp  read it over the Microsoft 365 MCP connector -- no browser at all
+  #
+  # "mcp" is the better path where it works: no corporate SSO sign-in that must
+  # never be retried, no saved browser profile (which is a replayable,
+  # MFA-satisfied session sitting on a disk), and the classify job stops needing
+  # /dev/shm and a Chromium-sized memory limit. It needs M365_TOKEN_JSON in the
+  # vault first, which is why the default stays "owa": a chart default that
+  # requires a secret nobody has provisioned turns an upgrade into an outage.
+  #
+  # When flipping this to "mcp", also set jobs.classify.browser: false and drop
+  # its resources to the digest job's numbers.
+  calendarSource: owa
+
+  # A working window with not one calendar entry in it is treated as a question
+  # for a human rather than as "nobody went to the office". Only turn this off
+  # for a calendar that is genuinely, routinely empty. See COMMON_MISTAKES #8.
+  requireCalendarEvents: true
+
+  # The MCP refresh token is seeded from the Secret into this path on each run,
+  # because Entra rotates the token on use and a mounted Secret is read-only.
+  # Must be writable: the root filesystem is not.
+  m365TokenCache: /tmp/m365-token.json
+
   # Chromium's user-data dir. Must sit under a writable volume: the root
   # filesystem is read-only.
   browserProfileDir: /tmp/browser-profile

@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import logging
 import os
 import sys
+from collections.abc import Iterator
 from datetime import date, timedelta
 from pathlib import Path
 
-from . import store
+from . import calendar_mcp, store
 from .calendar_owa import read_week
 from .classify import ClassifierConfig, classify_day
 from .config import Config, ConfigError
@@ -41,6 +43,41 @@ def _monday(d: date) -> date:
     return d - timedelta(days=d.weekday())
 
 
+@contextlib.contextmanager
+def _no_lock() -> Iterator[bool]:
+    """Stand-in for :func:`store.browser_lock` when no browser is involved."""
+    yield True
+
+
+def _read_calendar(cfg: Config, start: date, end: date) -> tuple[list, bool]:
+    """Collect ``start..end`` from whichever calendar source is configured.
+
+    Both sources answer ``(events, degraded)`` and the caller cannot tell them
+    apart, which is the point: the rule that a failed read must never be read as
+    "no office days" has to hold whichever one is in use.
+    """
+    if cfg.calendar_source == "mcp":
+        return calendar_mcp.read_range(
+            start,
+            end,
+            tz=cfg.timezone,
+            require_events=cfg.require_calendar_events,
+        )
+
+    with open_session(
+        cfg.insite_host, profile=Path(cfg.profile_dir), item=cfg.op_item, vault=cfg.op_vault
+    ) as (_ctx, page):
+        events: list = []
+        degraded = False
+        week = _monday(start)
+        while week <= end:
+            week_events, week_degraded = read_week(page, week)
+            events.extend(week_events)
+            degraded = degraded or week_degraded
+            week += timedelta(days=7)
+    return events, degraded
+
+
 def _slack(cfg: Config):
     from slack_sdk import WebClient
 
@@ -62,22 +99,19 @@ def cmd_classify(cfg: Config, args) -> int:
 
     with store.connect(cfg.database_url) as conn:
         store.ensure_schema(conn)
-        with store.browser_lock(conn) as got:
+        # The lock exists to stop two corporate SSO sign-ins running at once,
+        # which is how an account gets locked out. The MCP reader performs no
+        # sign-in and drives no browser, so it does not queue behind a browser
+        # job -- and a build stuck in an SSO flow no longer blocks the nightly
+        # classification behind it.
+        needs_browser = cfg.calendar_source != "mcp"
+        with store.browser_lock(conn) if needs_browser else _no_lock() as got:
             if not got:
                 logger.warning("classify: another browser job holds the lock; exiting")
                 return 0
 
             existing = {r["day"]: r for r in store.days_between(conn, start, end)}
-            with open_session(
-                cfg.insite_host, profile=Path(cfg.profile_dir), item=cfg.op_item, vault=cfg.op_vault
-            ) as (_ctx, page):
-                week = _monday(start)
-                events, degraded = [], False
-                while week <= end:
-                    wk_events, wk_degraded = read_week(page, week)
-                    events.extend(wk_events)
-                    degraded = degraded or wk_degraded
-                    week += timedelta(days=7)
+            events, degraded = _read_calendar(cfg, start, end)
 
             if degraded:
                 # Better to record nothing than to record "no bookings".

@@ -171,11 +171,13 @@ jobs:
           # File-level rules. Credential-grade working directories must never be
           # tracked: browser-profile/ is a replayable MFA-satisfied corporate
           # session, traces/*.zip is a Playwright trace with full DOM, headers
-          # and cookies, artifacts/ is screenshots of the employer's portal.
+          # and cookies, artifacts/ is screenshots of the employer's portal, and
+          # an M365 token cache holds a self-renewing refresh token that grants
+          # standing read access to the mailbox without re-prompting for MFA.
           # ---------------------------------------------------------------
           while IFS= read -r f; do
             note "$f" 0 tracked-credential-artifact
-          done < <(git ls-files | grep -E '^(browser-profile|traces|artifacts|e2e-artifacts)/|\.(ics|har|zip|pma|pem)$')
+          done < <(git ls-files | grep -E '^(browser-profile|traces|artifacts|e2e-artifacts)/|\.(ics|har|zip|pma|pem)$|(^|/)\.?m365[-.](mcp-)?token\.json$')
 
           # ---------------------------------------------------------------
           # Content rules, one pass per tracked text file.

@@ -2,7 +2,8 @@
 
 Automated monthly travel and working-from-home expense claims for **AFAS InSite**.
 
-The system reads the work calendar out of Outlook Web, decides day by day whether
+The system reads the work calendar -- over the Microsoft 365 MCP connector, or
+by driving Outlook Web -- decides day by day whether
 that was a commute or a day worked at home, records every decision with its
 evidence in a Postgres ledger, and then drives the InSite
 *verzameldeclaratie* form with Playwright to file the claim. Anything ambiguous
@@ -18,7 +19,7 @@ human approves it.
 ## The shape of it
 
 ```
-Outlook Web  ->  classify  ->  Postgres ledger  ->  Slack  ->  InSite  ->  submitted
+work calendar ->  classify  ->  Postgres ledger  ->  Slack  ->  InSite  ->  submitted
                      ^                                 |
                      +---------- human override -------+
 ```

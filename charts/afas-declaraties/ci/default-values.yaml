@@ -12,6 +12,11 @@ externalSecret:
   data:
     DATABASE_URL: {key: example-afas-database-url}
     INSITE_HOST: {key: example-afas-insite-host}
+    COMMUTE_PAGE_PATH: {key: example-afas-commute-page-path}
+    HOME_PAGE_PATH: {key: example-afas-home-page-path}
+    # Only required while config.calendarSource is "mcp", which this file
+    # sets so the guard's happy path is rendered at least once.
+    M365_TOKEN_JSON: {key: example-afas-m365-token-json}
     OP_SERVICE_ACCOUNT_TOKEN: {key: example-afas-op-service-account-token}
     OP_ITEM_NAME: {key: example-afas-op-item-name}
     OP_VAULT: {key: example-afas-op-vault}
@@ -25,9 +30,16 @@ config:
   # file in git that says "false" is one copy-paste away from being one that is.
   dryRun: true
   logLevel: debug
+  # The browser-free calendar path. classify needs no Chromium with it, so
+  # the job's browser flag is turned off below to match.
+  calendarSource: mcp
   excludedDates: "2026-01-01,2026-04-27"
   extra:
     EXAMPLE_EXTRA_KEY: example-value
+
+jobs:
+  classify:
+    browser: false
 
 # Exercise the placement passthroughs, which are empty in values.yaml.
 nodeSelector:
