@@ -2,6 +2,30 @@
 
 <!-- version list -->
 
+## v1.2.0 (2026-09-07)
+
+### Bug Fixes
+
+- **m365**: Https-only URLs, unique JSON-RPC ids, and degrade on an unknown block
+  ([`52908b6`](https://github.com/CalebSargeant/afas-declaraties/commit/52908b665dc2da4004d1adf21dd7b8e41212c525))
+
+- **m365**: Put the scanner marker on the line it reports
+  ([`47ff5d6`](https://github.com/CalebSargeant/afas-declaraties/commit/47ff5d6211a0d3aec86e6390d1a8ccc7815db295))
+
+- **m365_mcp**: Raise M365Error on response missing result key
+  ([`8582891`](https://github.com/CalebSargeant/afas-declaraties/commit/85828918402cf55dd9ea8f7b506f7a34a816a28a))
+
+### Features
+
+- **calendar**: Read the calendar over the M365 MCP connector
+  ([`7c5b704`](https://github.com/CalebSargeant/afas-declaraties/commit/7c5b7044fea5de285fe1fc7eccf6bf40557b7a7c))
+
+### Testing
+
+- **m365**: Cover the transport paths that decide loud versus silent
+  ([`813db8a`](https://github.com/CalebSargeant/afas-declaraties/commit/813db8af1b209bb63ed519c6546b95fd1425d02d))
+
+
 ## v1.1.1 (2026-09-07)
 
 ### Bug Fixes
