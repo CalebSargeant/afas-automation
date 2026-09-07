@@ -407,3 +407,84 @@ as routine, not exceptional.
 While there: ack a `view_submission` BEFORE the database work, not after. Slack
 drops an unacked submission after three seconds and redelivers it, and a slow
 database is exactly when that fires.
+
+## The M365 connector answers in blocks, and joining them corrupts the JSON
+
+`tools/call` returns `content` as a **list of text blocks**, one JSON object
+each: an optional `searchInfo` header, one block per result, a pagination
+footer, and -- when a scan was cut short -- a block of plain prose. The obvious
+client does `''.join(b['text'] for b in content)`, which produces
+`}{`-concatenated JSON that `json.loads` refuses, and silently swallows the
+prose note that was the only statement that the answer is partial.
+
+Parse each block separately and classify it. `m365_mcp.call()` does that and
+records a block it cannot place as a **note**, which marks the search
+incomplete, which `read_range` turns into `degraded`. Neither extreme is right:
+skipping it quietly would look exactly like a week with no desk bookings, which
+is COMMON_MISTAKES #8 wearing a different hat, and raising would let one new
+metadata block Anthropic adds -- at an endpoint they own and do not document --
+break every classification run outright.
+
+The footer is also not one fixed shape. A single-page answer ends
+`{"totalResultCount": 12}` with no `nextOffset` at all; a paged one ends
+`{"moreResults": true, "nextOffset": 25, "totalResultCount": 60}`; the chat
+search's footer carries no total. Treat "any pagination key present" as the
+footer, not "all of them".
+
+## An all-day calendar event is a half-open range, and leave arrives as ONE of them
+
+**Symptom.** Monday is correctly marked absent and Tuesday to Friday of the same
+holiday are classified `home` and claimed. Nothing errors, and the calendar
+plainly shows the leave.
+
+**Cause.** Graph returns a week of leave as a **single** event running from
+Monday 00:00 to **Saturday** 00:00, `isAllDay: true`. Reading `start.date()`
+gives one day. The end is exclusive, so the days covered are
+`start .. end - 1 day`, and they have to be expanded.
+
+`calendar_mcp.parse_event()` returns a **list** for exactly this reason, and the
+regression test is `test_multi_day_leave_covers_every_day_it_spans`.
+
+Two more traps in the same place:
+
+- **Never convert an all-day event's bounds through a time zone.** A day-long
+  entry on the 3rd is on the 3rd everywhere; converting its midnight bounds out
+  of a zone behind the local one moves it to the 2nd and misdates every desk
+  booking. Read the date part literally. Timed events *are* converted, because
+  22:30 UTC really is tomorrow in Amsterdam.
+- **The zone is named the Windows way, not the IANA way.** `ZoneInfo("W. Europe
+  Standard Time")` raises. There is a small map; an unknown name falls back to
+  UTC with a warning, which is proportionate because only timed events consult
+  it at all.
+
+## The connector filters on the event's own start, so a running absence is invisible
+
+**Symptom.** A fortnight of leave that began the week before the classification
+window produces no events inside it, so those days read "no booking, therefore
+home" and the working-from-home allowance is claimed for a holiday.
+
+**Cause.** `afterDateTime` filters on when the event *starts*. An event that
+started before the window and is still running is simply not returned.
+
+**Fix.** `calendar_mcp.LOOKBACK_DAYS` reaches the query a month further back
+than the window being classified, and the extra days are clipped off after
+expansion. The cost is one more page of results; the alternative is
+over-claiming, which is the one direction this system may not fail in.
+
+## A mounted Secret is read-only, and Entra rotates the refresh token on use
+
+Every refresh returns a **new** refresh token. Writing it back into a Secret
+mounted at `/etc/...` fails with `EROFS`, so a naive client keeps replaying the
+original one until it ages out -- at which point the nightly job starts failing
+with an auth error weeks after the change that caused it.
+
+`m365_mcp` therefore seeds a writable cache under `/tmp` from `M365_TOKEN_JSON`
+(or `M365_TOKEN_SEED`) at the start of each run and lets the rotation land
+there. Losing that rotation when the pod exits is fine -- the seed keeps its own
+90-day sliding window -- but the token must be *used* inside that window or it
+dies, and re-minting it needs an interactive device-code sign-in.
+
+Related: `token()` will **not** start a device-code flow unless asked to. A
+device code blocks until a human types it into a browser, and a CronJob has no
+human; failing immediately with the login command in the message beats a job
+that hangs until its `activeDeadlineSeconds`.

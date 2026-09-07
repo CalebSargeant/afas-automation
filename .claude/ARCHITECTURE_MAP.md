@@ -15,6 +15,8 @@ live portal; everything before it has.
 | `models.py` | Domain types: `ClaimType`, `DayState`, `Verdict`, `Reason`, `CalendarEvent`, `DayClassification`. `CalendarEvent.is_desk_booking()` needs three signals to agree (all-day + organiser + subject prefix). | none, by design |
 | `classify.py` | `classify_day()` turns evidence into a verdict. `ClassifierConfig` holds everything person/tenant-specific. Rules are asymmetric: office needs positive evidence, home is the residual, contradictions become a question. | none |
 | `calendar_owa.py` | Reads Outlook Web. `parse_event_label()` (pure, unit-tested against captured `aria-label` strings) + `read_week()` which returns `(events, degraded)`. | Playwright |
+| `calendar_mcp.py` | Reads the same calendar over the M365 MCP connector. `parse_event()` (pure, unit-tested against captured payloads) + `read_range()`, same `(events, degraded)` contract. All-day events expand across the days they span; a failed or empty read is degraded, never "no office days". | HTTPS |
+| `m365_mcp.py` | The connector transport. Device-code sign-in against Anthropic's multi-tenant app pair, refresh-token cache, JSON-RPC, and `search()` which pages and reports whether the answer is complete. Stdlib only. | HTTPS, Entra |
 | `entra.py` | Microsoft Entra sign-in as a **state machine**: account tiles / email / password / TOTP / stay-signed-in, in whatever order the tenant offers them. `_is_active()` is the whole trick (see COMMON_MISTAKES #1). | Playwright |
 | `session.py` | `open_session()` context manager: persistent Chromium context, sign in if needed, `wait_until_settled()` on host **and** non-transient path, yield `(context, page)`. | Playwright, 1Password |
 | `onepassword.py` | `get_field()` / `get_totp()` via the `op` CLI. `OP_DOCKER_IMAGE` runs it in a container for local dev. Token is read by `op` from the env, never by this module. | subprocess |
@@ -25,8 +27,14 @@ live portal; everything before it has.
 
 ## Data flow
 
+`CALENDAR_SOURCE` picks the reader. Both answer `(events, degraded)`, and there
+is no fallback between them: swapping the source a claim is derived from
+without saying so is how "the read failed" becomes "there were no office days".
+
 ```
-OWA week  --read_week-->  CalendarEvent[]  --classify_day-->  DayClassification
+OWA week  --read_week--.
+                       |
+M365 MCP  --read_range-+-->  CalendarEvent[]  --classify_day-->  DayClassification
                                                                      |
                                                               store.record_day
                                                                      v

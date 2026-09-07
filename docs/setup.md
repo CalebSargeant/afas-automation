@@ -21,6 +21,12 @@ OCI Vault via External Secrets Operator; the rest come from a ConfigMap.
 | `DRY_RUN` | no | `true` | `false` creates real declarations. |
 | `LOG_LEVEL` | no | `INFO` | Python log level. |
 | `BROWSER_PROFILE_DIR` | no | `/tmp/browser-profile` | Chromium user-data dir. Must be on a writable volume. |
+| `CALENDAR_SOURCE` | no | `owa` | `owa` drives Outlook Web with Chromium; `mcp` reads the calendar over the Microsoft 365 MCP connector. Anything else is refused rather than defaulted. |
+| `M365_TOKEN_JSON` | if `mcp` | - | The MCP token cache as JSON. Holds a refresh token, so it is a credential. |
+| `M365_TOKEN_CACHE` | no | `~/.m365-mcp-token.json` | Where that JSON is written. Must be writable: Entra rotates the refresh token on use. |
+| `M365_TOKEN_SEED` | no | - | Path to a file holding the same JSON, if a mount suits better than an env var. |
+| `M365_TENANT` | no | `organizations` | Entra authority segment. Pin it only if sign-in resolves the wrong directory. |
+| `REQUIRE_CALENDAR_EVENTS` | no | `true` | A working window with no calendar entries at all becomes a question, not a week at home. |
 | `BOOKING_ORGANISERS` | no | the desk-booking tool | Comma-separated organiser names that mark a desk booking. |
 | `BOOKING_SUBJECT_PREFIXES` | no | `Booking` | Comma-separated subject prefixes, case-insensitive. |
 | `EXCLUDED_DATES` | no | - | Comma-separated ISO dates never claimed. |
@@ -113,6 +119,58 @@ all.
     and scraped data from the employer portal. All three are gitignored and
     excluded from the Docker build context. Never upload one, attach one to an
     issue, or copy one off the machine it was created on.
+
+### The Microsoft 365 MCP connector
+
+The alternative to driving Outlook Web for the calendar, and the one that needs
+no browser at all. Set `CALENDAR_SOURCE=mcp`.
+
+**Why it works without an app registration.** This tenant grants no app
+registrations, so the ordinary Microsoft Graph route is closed. Anthropic
+registered a multi-tenant client/server app pair for its own Microsoft 365
+connector, the tenant has already consented to it, and a device-code sign-in
+against that pair therefore needs no admin action. Every scope is delegated, so
+the reach is capped at what the signed-in user can already open in Outlook.
+Nothing is escalated; the calendar just becomes scriptable.
+
+```bash
+# Once, interactive. Prints a code to type into a browser.
+python -m afas_declaraties.m365_mcp login
+
+# Check what it can see
+python -m afas_declaraties.m365_mcp call get_me
+python -m afas_declaraties.m365_mcp tools
+```
+
+That writes `~/.m365-mcp-token.json`. Put its **contents** in the vault as the
+`M365_TOKEN_JSON` entry and add it to `externalSecret.data`; the chart refuses
+to render with `calendarSource: mcp` and no source for it.
+
+```bash
+export CALENDAR_SOURCE=mcp
+python -m afas_declaraties.cli classify --since 2026-09-01 --until 2026-09-05
+```
+
+!!! danger "The token cache is a credential"
+    A refresh token is standing read access to the whole mailbox that never
+    re-prompts for MFA, and it renews itself for as long as it keeps being
+    used. It is the same class of thing as `browser-profile/`. Gitignored,
+    excluded from the image, and it never leaves the vault.
+
+!!! note "Why the cache is copied to /tmp"
+    Entra rotates the refresh token on every use, and a mounted Secret is
+    read-only. The chart therefore seeds `M365_TOKEN_CACHE` (`/tmp/...`) from
+    `M365_TOKEN_JSON` at the start of each run and lets the rotation land
+    there. Losing that rotation when the pod exits is harmless -- the seed
+    stays valid for its own sliding window -- but the token does have to be
+    used at least once every 90 days or it ages out.
+
+!!! warning "Two tenants, and the wrong one looks right"
+    `M365_TENANT` defaults to `organizations`, which lets Entra resolve the
+    signed-in user's home directory. An account that is a guest in a second
+    tenant can land in that one instead, and querying the wrong directory gives
+    confidently wrong answers rather than an error. If `get_me` comes back
+    looking odd, pin `M365_TENANT` to the home tenant id.
 
 ### Inspecting the portal
 

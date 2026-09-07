@@ -36,6 +36,12 @@ python scripts/bootstrap_session.py --headed --trace traces/bootstrap.zip
 python scripts/explore_insite.py / --shot artifacts/home.png --out artifacts/home.json
 python scripts/explore_insite.py <PATH> --headed --net --wait 10
 
+# The Microsoft 365 MCP connector (the browser-free calendar path).
+# One interactive sign-in; the refresh token then renews silently.
+python -m afas_declaraties.m365_mcp login
+python -m afas_declaraties.m365_mcp call get_me
+export CALENDAR_SOURCE=mcp      # owa (default) drives Chromium instead
+
 # The app itself
 python -m afas_declaraties.cli classify --window 9
 python -m afas_declaraties.cli classify --since 2026-08-01 --until 2026-08-31

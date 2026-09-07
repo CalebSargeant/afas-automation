@@ -39,9 +39,26 @@ value is a `<PLACEHOLDER>`; the real ones live in OCI Vault and cluster secrets.
 
 ### 1. Classify (nightly)
 
-Opens an authenticated session, reads the work week out of Outlook Web, and
-turns each `aria-label` into a normalised event. Every working day then gets a
-verdict:
+Reads the work week and turns each entry into a normalised event. There are two
+readers and they answer the same `(events, degraded)` contract, so the
+classifier cannot tell them apart:
+
+| `CALENDAR_SOURCE` | How it reads |
+|---|---|
+| `owa` (default) | Drives Outlook Web with Chromium as the signed-in user and parses each `aria-label` |
+| `mcp` | Calls the Microsoft 365 MCP connector over HTTPS. No browser, no SSO sign-in, no saved profile |
+
+`mcp` is the better path where it is available. It removes the corporate SSO
+login that must never be retried, the `browser-profile/` directory (a
+replayable, MFA-satisfied session on disk), and Chromium itself from the
+nightly job. It needs one interactive sign-in to mint a refresh token; see
+[docs/setup.md](docs/setup.md#the-microsoft-365-mcp-connector).
+
+There is deliberately no automatic fallback between the two. Silently swapping
+the source a claim is derived from is how "the read failed" becomes "there were
+no office days".
+
+Every working day then gets a verdict:
 
 | Evidence | Verdict | Claim |
 |---|---|---|
@@ -105,6 +122,12 @@ from OCI Vault via External Secrets Operator, and the rest from a ConfigMap.
 | `DRY_RUN` | No | `true` | `false` actually creates declarations. This spends real money |
 | `LOG_LEVEL` | No | `INFO` | Standard Python log level |
 | `BROWSER_PROFILE_DIR` | No | `/tmp/browser-profile` | Chromium user-data dir. Must sit on a writable volume; the root filesystem is read-only |
+| `CALENDAR_SOURCE` | No | `owa` | `owa` drives Outlook Web with Chromium; `mcp` reads the calendar over the Microsoft 365 MCP connector. Anything else is refused |
+| `M365_TOKEN_JSON` | If `mcp` | - | The MCP token cache as JSON, straight from `m365_mcp login`. A refresh token, so it is a credential |
+| `M365_TOKEN_CACHE` | No | `~/.m365-mcp-token.json` | Where that JSON is written. Must be writable: Entra rotates the refresh token on use |
+| `M365_TOKEN_SEED` | No | - | A file holding the same JSON, if you would rather mount it than pass it as an env var |
+| `M365_TENANT` | No | `organizations` | Entra authority segment. Only set it if sign-in resolves the wrong directory |
+| `REQUIRE_CALENDAR_EVENTS` | No | `true` | Treat a working window with no calendar entries at all as a question, not as a week spent at home |
 | `BOOKING_ORGANISERS` | No | the desk-booking tool | Comma-separated organiser names that mark a desk booking |
 | `BOOKING_SUBJECT_PREFIXES` | No | `Booking` | Comma-separated subject prefixes, matched case-insensitively |
 | `EXCLUDED_DATES` | No | - | Comma-separated ISO dates never claimed (leave, holidays the calendar does not carry) |

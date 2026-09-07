@@ -7,6 +7,8 @@
 | Domain types | `src/afas_declaraties/models.py` | `ClaimType`, `DayState`, `Verdict`, `Reason`, `CalendarEvent`, `DayClassification`. No I/O. |
 | Classifier | `src/afas_declaraties/classify.py` | `classify_day()` and `ClassifierConfig`. No I/O. |
 | Calendar reader | `src/afas_declaraties/calendar_owa.py` | Parses Outlook Web `aria-label` strings; `read_week()` drives the page. |
+| Calendar reader (MCP) | `src/afas_declaraties/calendar_mcp.py` | The browser-free alternative. `parse_event()` is pure; `read_range()` answers the same `(events, degraded)` contract. |
+| MCP transport | `src/afas_declaraties/m365_mcp.py` | Device-code auth against Anthropic's multi-tenant app pair, refresh-token cache, JSON-RPC, paging. Stdlib only. |
 | Entra sign-in | `src/afas_declaraties/entra.py` | Interactive Microsoft SSO as a state machine. |
 | Session | `src/afas_declaraties/session.py` | `open_session()`: a Chromium context that is signed in and settled. |
 | Credentials | `src/afas_declaraties/onepassword.py` | `get_field()` / `get_totp()` via the `op` CLI. |
@@ -28,6 +30,23 @@ yesterday, so a day whose booking was cancelled after it was first seen gets
 reconsidered. That reconciliation is what turns "I deleted the calendar entry"
 into a question instead of a silently wrong claim.
 
+`CALENDAR_SOURCE` picks which reader runs. Both answer `(events, degraded)` and
+the classifier cannot tell them apart. There is **no fallback between them**:
+quietly swapping the source a claim is derived from is how "the read failed"
+turns into "there were no office days".
+
+With `CALENDAR_SOURCE=mcp` (no browser):
+
+1. `m365_mcp.token()` refreshes the cached Entra token, or fails immediately
+   telling you to run the one-off login. It will not stop and wait for a device
+   code, because a CronJob has nobody to type one.
+2. `read_range()` pages `outlook_calendar_search` over the window, reaching a
+   month further back than it needs so an absence that *started* earlier is
+   still seen, then clips back to the window. All-day events expand across every
+   day they span; a failed, partial or entirely empty read comes back degraded.
+
+With `CALENDAR_SOURCE=owa` (the default):
+
 1. `open_session()` launches a persistent Chromium context and navigates to the
    portal. If Entra answers, `sign_in()` runs; otherwise the existing session is
    accepted with no credentials entered at all.
@@ -36,8 +55,16 @@ into a question instead of a silently wrong claim.
 3. `read_week()` navigates OWA's work-week view, harvests every element with a
    descriptive `aria-label`, and parses each one into a `CalendarEvent`. It
    returns `(events, degraded)`.
+
+Either way:
+
 4. `classify_day()` produces a `DayClassification` per date.
 5. `store.record_day()` freezes each one.
+
+The browser advisory lock is taken only when a browser is actually involved. It
+exists to stop two corporate SSO sign-ins running at once; the MCP reader
+performs none, so the nightly classification no longer queues behind a `build`
+stuck in a sign-in flow.
 
 ### Build
 
@@ -126,9 +153,17 @@ produce a commute claim for a day spent on leave.
 !!! danger "Rule 3 is the one that matters"
     "No events found" and "the page did not load" look identical downstream.
     Treating the second as the first turns an outage into a month of
-    working-from-home claims that were never true. `read_week()` therefore
-    returns a `degraded` flag alongside the events, set when labels were
-    harvested but every single one failed to parse. Never discard it.
+    working-from-home claims that were never true. Both readers therefore
+    return a `degraded` flag alongside the events, and neither is allowed to
+    turn a failure into an empty list. Never discard it.
+
+    `read_week()` sets it when labels were harvested but every one failed to
+    parse. `read_range()` sets it when the connector errored, when it said its
+    answer was partial, when every event failed to parse -- and, unless
+    `REQUIRE_CALENDAR_EVENTS=false`, when the whole window came back with no
+    events at all. That last one is deliberate paranoia: a wildcard search that
+    quietly stopped matching returns a clean, empty, entirely plausible answer.
+    Being asked about a genuinely quiet week costs one Slack click.
 
 !!! note "Rule 7 asks rather than assumes"
     Deleting a calendar entry after the fact is how the user says "I did not

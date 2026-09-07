@@ -24,8 +24,13 @@ data:
   # build job files a real claim in AFAS InSite.
   DRY_RUN: {{ .Values.config.dryRun | toString | lower | quote }}
   HEADLESS: {{ .Values.config.headless | toString | lower | quote }}
-  # Under /tmp because the root filesystem is read-only.
+  # "owa" drives Chromium; "mcp" reads the calendar over the Microsoft 365 MCP
+  # connector and needs no browser. Neither value names an employer.
+  CALENDAR_SOURCE: {{ .Values.config.calendarSource | quote }}
+  REQUIRE_CALENDAR_EVENTS: {{ .Values.config.requireCalendarEvents | toString | lower | quote }}
+  # Both under /tmp because the root filesystem is read-only.
   BROWSER_PROFILE_DIR: {{ .Values.config.browserProfileDir | quote }}
+  M365_TOKEN_CACHE: {{ .Values.config.m365TokenCache | quote }}
   {{- with .Values.config.bookingOrganisers }}
   BOOKING_ORGANISERS: {{ . | quote }}
   {{- end }}

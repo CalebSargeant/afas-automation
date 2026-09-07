@@ -52,7 +52,10 @@ repos:
       # is a replayable, MFA-satisfied corporate session - a credential, not a
       # cache. traces/*.zip is a Playwright trace carrying full DOM, request
       # headers and cookies. artifacts/ is screenshots of the employer's portal.
-      # The same paths are re-checked in CI against `git ls-files`.
+      # The M365 token cache is the same class of thing by another route: a
+      # refresh token is standing read access to the whole mailbox that never
+      # re-prompts for MFA. The same paths are re-checked in CI against
+      # `git ls-files`.
       - id: block-credential-artifacts
         name: refuse to commit credential-grade artifacts
         language: fail
@@ -61,7 +64,7 @@ repos:
           artifacts/ hold a live corporate session, full request traces and
           portal screenshots. If you genuinely need a fixture, hand-sanitise it
           and put it under tests/fixtures/.
-        files: '^(browser-profile|traces|artifacts|e2e-artifacts)/|\.(ics|har|pma)$'
+        files: '^(browser-profile|traces|artifacts|e2e-artifacts)/|\.(ics|har|pma)$|(^|/)\.?m365[-.](mcp-)?token\.json$|(^|/)[^/]*\.m365\.json$'
 
       # .env is where a real INSITE_HOST and a real service-account token end up
       # during local development. Only .env.example may be tracked.

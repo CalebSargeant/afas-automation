@@ -223,10 +223,17 @@ __marimo__/
 # A saved browser profile is a replayable, MFA-satisfying corporate session.
 # Traces, HARs and screenshots of an authenticated AFAS session contain
 # salary-adjacent personal data. This repo is public.
+#
+# The M365 token cache is the same class of thing by another route: a refresh
+# token is standing read access to the whole mailbox that never re-prompts for
+# MFA, and it renews itself for as long as it keeps being used.
 # ---------------------------------------------------------------------------
 browser-profile/
 storage_state.json
 auth.json
+m365-token.json
+.m365-mcp-token.json
+*.m365.json
 traces/
 *.har
 *.trace.zip
