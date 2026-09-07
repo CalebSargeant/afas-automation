@@ -115,8 +115,9 @@ def _urlopen(url: str, *, data: bytes, headers: dict | None = None, timeout: int
     if not url.startswith("https://"):
         raise M365Error(f"refusing to open a non-https URL: {url[:60]!r}")
     request = urllib.request.Request(url, data=data, headers=headers or {})
-    # nosec B310 - the scheme is checked immediately above
-    return urllib.request.urlopen(request, timeout=timeout)  # noqa: S310  # nosemgrep
+    # The scheme is checked immediately above, which is the mitigation both
+    # scanners ask for; the markers keep them from re-reporting it.
+    return urllib.request.urlopen(request, timeout=timeout)  # nosec B310  # nosemgrep
 
 
 def _post_form(url: str, data: dict) -> dict:
@@ -241,7 +242,7 @@ def token(*, allow_device_code: bool = False) -> str:
         try:
             cached = json.loads(path.read_text())
         except (OSError, ValueError) as exc:
-            logger.warning("m365: the token cache at %s is unreadable (%s)", path, exc)
+            logger.warning("m365: the cache at %s is unreadable (%s)", path, exc)
 
     if cached and "access_token" in cached:
         # 120s of slack, because a token that expires mid-request surfaces as a
