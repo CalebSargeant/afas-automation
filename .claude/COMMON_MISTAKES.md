@@ -369,3 +369,41 @@ And when adding that job: **do not derive the period from the date.** `build`
 runs on the 28th for the *previous* month, so any submit landing on or after
 the 1st would compute a month later than the one approved. Read the period off
 the approved row. Regression tests in `tests/test_submit_selection.py`.
+
+## An `ON CONFLICT DO UPDATE` only sets the columns it lists
+
+`apply_override` wrote `verdict` in its `VALUES` but never listed it in the
+`DO UPDATE SET` clause. A brand-new row therefore got the right verdict and an
+existing row kept the classifier's old one, so a day corrected from office to
+home read `verdict=office, claim_type=home` — claiming one thing and saying
+another.
+
+Nothing gated on `verdict` (`claimable_days`, `weekly_digest` and `classify`'s
+`previous_verdict` all go off `claim_type`), so no claim was wrong. That is luck,
+not design: the ledger is the system of record and a self-contradicting row in it
+is a defect on its own terms.
+
+Two habits from this. When adding a column to an upsert's `VALUES`, add it to
+`DO UPDATE SET` in the same edit. And when a write path and a read path disagree
+about which column is authoritative, say so in the schema rather than leaving it
+to whoever reads the table next.
+
+The same function also wrote the literal `'human'` as a verdict, which is not a
+member of the `Verdict` enum. It never blew up because nothing parses the column
+back. Derive it from the claim type instead; `human_override` in `reasons` is
+what records that a person decided.
+
+## Every handler that writes needs the replay guard, not just the scary one
+
+`handle_approve` called `once()`; `handle_corrections` did not, so
+`slack_interaction` stayed empty after a real correction and a Socket Mode replay
+would have applied the overrides twice. Idempotent in value, but it doubles the
+`overridden_at` and posts a second summary to the channel.
+
+Socket Mode replays on reconnect, and the socket does reconnect — Slack rotates
+the endpoint roughly every five hours, visible in slackd's own logs. Treat replay
+as routine, not exceptional.
+
+While there: ack a `view_submission` BEFORE the database work, not after. Slack
+drops an unacked submission after three seconds and redelivers it, and a slow
+database is exactly when that fires.

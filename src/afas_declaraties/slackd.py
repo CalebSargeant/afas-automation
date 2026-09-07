@@ -185,7 +185,7 @@ def build_app(cfg: Config) -> App:
         )
 
     @app.view(MODAL_CALLBACK)
-    def handle_corrections(ack, body, view, client):
+    def handle_corrections(ack, body, view, client, logger_=logger):
         user = body["user"]["id"]
         if not authorised(user):
             ack(
@@ -193,6 +193,19 @@ def build_app(cfg: Config) -> App:
                 errors={list(view["state"]["values"])[0]: "Je mag geen dagen corrigeren."},
             )
             return
+        if not once(body, "correct", user):
+            # Re-applying the same overrides would land the same values, but the
+            # channel would get a second "N dagen bijgewerkt" and the ledger a
+            # second overridden_at. Same guard as the approval path.
+            ack()
+            logger_.info("slackd: duplicate corrections delivery ignored")
+            return
+
+        # Ack before the writes, not after. Slack drops a view_submission that
+        # is not acked within three seconds and redelivers it, and a slow
+        # database is exactly when that happens.
+        ack()
+        _touch_heartbeat()
 
         applied, refused = [], []
         with store.connect(cfg.database_url) as conn:
@@ -203,8 +216,6 @@ def build_app(cfg: Config) -> App:
                 day = date.fromisoformat(block_id.split(SEP, 1)[1])
                 claim = _CHOICE_TO_CLAIM[selected["value"]]
                 (applied if store.apply_override(conn, day, claim, user) else refused).append(day)
-        ack()
-        _touch_heartbeat()
 
         summary = f"{len(applied)} dag(en) bijgewerkt door <@{user}>."
         if refused:

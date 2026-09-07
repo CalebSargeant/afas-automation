@@ -24,7 +24,7 @@ from datetime import date
 import psycopg
 from psycopg.rows import dict_row
 
-from .models import ClaimType, DayClassification, DayState
+from .models import ClaimType, DayClassification, DayState, Verdict
 
 logger = logging.getLogger(__name__)
 
@@ -174,11 +174,26 @@ def record_day(conn: psycopg.Connection, c: DayClassification) -> None:
     conn.commit()
 
 
+#: What a human decision means as a verdict.
+#:
+#: The verdict is REPLACED, not left alone. A row reading
+#: `verdict=office, claim_type=home` claims one thing and reads as another, and
+#: the whole point of the ledger is to still make sense to someone reading it
+#: three weeks later. That a person decided it is carried by the
+#: `human_override` reason, which is what reason codes are for.
+_OVERRIDE_VERDICT: dict[ClaimType | None, Verdict] = {
+    ClaimType.COMMUTE: Verdict.OFFICE,
+    ClaimType.HOME: Verdict.HOME,
+    None: Verdict.ABSENT,
+}
+
+
 def apply_override(
     conn: psycopg.Connection, day: date, claim_type: ClaimType | None, actor: str
 ) -> bool:
     """Record a human decision for a day. Returns False if the day is already filed."""
     state = DayState.CONFIRMED.value if claim_type else DayState.EXCLUDED.value
+    verdict = _OVERRIDE_VERDICT[claim_type].value
     year, period = period_for(day)
     with conn.cursor() as cur:
         cur.execute(
@@ -186,10 +201,11 @@ def apply_override(
             INSERT INTO claim_day (day, claim_type, state, verdict, reasons,
                                    evidence, period_year, period_no,
                                    overridden_by, overridden_at)
-            VALUES (%s, %s, %s, 'human', ARRAY['human_override'], '{}'::jsonb, %s, %s, %s, now())
+            VALUES (%s, %s, %s, %s, ARRAY['human_override'], '{}'::jsonb, %s, %s, %s, now())
             ON CONFLICT (day) DO UPDATE SET
                 claim_type    = EXCLUDED.claim_type,
                 state         = EXCLUDED.state,
+                verdict       = EXCLUDED.verdict,
                 reasons       = claim_day.reasons || ARRAY['human_override'],
                 overridden_by = EXCLUDED.overridden_by,
                 overridden_at = now(),
@@ -197,7 +213,7 @@ def apply_override(
             WHERE claim_day.state <> 'submitted'
             RETURNING day
             """,
-            (day, claim_type.value if claim_type else None, state, year, period, actor),
+            (day, claim_type.value if claim_type else None, state, verdict, year, period, actor),
         )
         changed = cur.fetchone() is not None
     conn.commit()
