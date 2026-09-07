@@ -64,7 +64,7 @@ repos:
           artifacts/ hold a live corporate session, full request traces and
           portal screenshots. If you genuinely need a fixture, hand-sanitise it
           and put it under tests/fixtures/.
-        files: '^(browser-profile|traces|artifacts|e2e-artifacts)/|\.(ics|har|pma)$|(^|/)\.?m365[-.](mcp-)?token\.json$'
+        files: '^(browser-profile|traces|artifacts|e2e-artifacts)/|\.(ics|har|pma)$|(^|/)\.?m365[-.](mcp-)?token\.json$|(^|/)[^/]*\.m365\.json$'
 
       # .env is where a real INSITE_HOST and a real service-account token end up
       # during local development. Only .env.example may be tracked.

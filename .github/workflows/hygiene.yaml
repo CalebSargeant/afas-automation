@@ -177,7 +177,7 @@ jobs:
           # ---------------------------------------------------------------
           while IFS= read -r f; do
             note "$f" 0 tracked-credential-artifact
-          done < <(git ls-files | grep -E '^(browser-profile|traces|artifacts|e2e-artifacts)/|\.(ics|har|zip|pma|pem)$|(^|/)\.?m365[-.](mcp-)?token\.json$')
+          done < <(git ls-files | grep -E '^(browser-profile|traces|artifacts|e2e-artifacts)/|\.(ics|har|zip|pma|pem)$|(^|/)\.?m365[-.](mcp-)?token\.json$|(^|/)[^/]*\.m365\.json$')
 
           # ---------------------------------------------------------------
           # Content rules, one pass per tracked text file.

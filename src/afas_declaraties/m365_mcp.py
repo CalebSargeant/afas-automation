@@ -329,6 +329,8 @@ def _rpc(method: str, params: dict) -> dict:
     if "error" in answer:
         error = answer["error"]
         raise M365Error(f"MCP error {error.get('code')}: {error.get('message')}")
+    if "result" not in answer:
+        raise M365Error(f"MCP response missing 'result': {list(answer)[:10]}")
     return answer["result"]
 
 
