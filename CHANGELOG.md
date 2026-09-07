@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v1.1.1 (2026-09-07)
+
+### Bug Fixes
+
+- **override**: Keep the verdict consistent with the claim, and dedupe corrections
+  ([`4c1737d`](https://github.com/CalebSargeant/afas-declaraties/commit/4c1737d8aa58bd971586172672a89c9460bec594))
+
+
 ## v1.1.0 (2026-09-06)
 
 ### Bug Fixes

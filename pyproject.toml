@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "afas-declaraties"
-version = "1.1.0"
+version = "1.1.1"
 description = "Classify work days from the calendar, get them approved in Slack, and file the resulting expense claims in the AFAS portal."
 readme = "README.md"
 requires-python = ">=3.12"
