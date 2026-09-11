@@ -6,7 +6,7 @@
 # Target architecture is linux/arm64 (the OCI cloud tier is arm64 nodes);
 # amd64 is built as well so the thing can run on a laptop.
 
-FROM python:3.12-slim AS runtime
+FROM python:3.14-slim AS runtime
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
