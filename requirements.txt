@@ -21,6 +21,6 @@ websockets==17.1
 # --- transitive, pinned ---
 greenlet==3.5.5               # playwright sync API
 psycopg-binary==3.3.5         # the [binary] extra of psycopg
-pyee==13.0.1                  # playwright
+pyee==14.0.0                  # playwright
 slack-sdk==3.44.1             # slack_bolt
 typing_extensions==4.16.0     # psycopg, pyee
