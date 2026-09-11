@@ -43,7 +43,7 @@ concurrency:
 jobs:
   semantic-release:
     name: Semantic Release
-    uses: calebsargeant/reusable-workflows/.github/workflows/semantic-release.yaml@0c3840625b6760212a3e74a54a1a37a2fe61813c # v1.0.29
+    uses: calebsargeant/reusable-workflows/.github/workflows/semantic-release.yaml@98676cf3b495f978b1f9dbe22719d7cbd293b5b1 # v1.15.0
     with:
       bump: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.bump || '' }}
       working_directory: '.'
