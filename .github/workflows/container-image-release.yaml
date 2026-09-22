@@ -34,7 +34,7 @@ permissions:
 
 jobs:
   docker:
-    uses: calebsargeant/reusable-workflows/.github/workflows/docker-bake-ghcr.yaml@ed07d06ba6cc77517b697a89cc82a9876bb49858 # v1.0.24
+    uses: calebsargeant/reusable-workflows/.github/workflows/docker-bake-ghcr.yaml@98676cf3b495f978b1f9dbe22719d7cbd293b5b1 # v1.15.0
     with:
       image_name: afas-declaraties
       # Must be named explicitly. The promote step lists the bake targets and,
