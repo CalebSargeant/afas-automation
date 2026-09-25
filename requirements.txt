@@ -13,7 +13,7 @@
 #     'pip install -q playwright "psycopg[binary]" slack_bolt websockets && pip freeze'
 
 # --- direct ---
-playwright==1.62.0            # bundles Chromium 151.0.7922.34
+playwright==1.63.0            # bundles Chromium 151.0.7922.34
 psycopg[binary]==3.3.5
 slack-bolt==1.30.0
 websockets==17.1
