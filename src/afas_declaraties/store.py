@@ -225,7 +225,11 @@ def apply_override(
 def claimable_days(
     conn: psycopg.Connection, year: int, period: int, claim_type: ClaimType
 ) -> list[dict]:
-    """Days ready to be filed for a period. Excludes anything unresolved."""
+    """Days on the claim for a period. Excludes anything unresolved.
+
+    `drafted` counts: a live `build` moves its days there, and approval and submit
+    must still see them. Leaving it out voids the digest of every real draft.
+    """
     with conn.cursor() as cur:
         cur.execute(
             """
@@ -233,12 +237,27 @@ def claimable_days(
             FROM claim_day
             WHERE period_year = %s AND period_no = %s
               AND claim_type = %s
-              AND state IN ('planned', 'confirmed')
+              AND state IN ('planned', 'confirmed', 'drafted')
             ORDER BY day
             """,
             (year, period, claim_type.value),
         )
         return cur.fetchall()
+
+
+def open_periods(conn: psycopg.Connection, year: int, period: int) -> list[tuple[int, int]]:
+    """Periods up to the given one that still hold something to file or decide."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT DISTINCT period_year, period_no FROM claim_day
+            WHERE (period_year, period_no) <= (%s, %s)
+              AND state IN ('planned', 'confirmed', 'drafted', 'needs_input')
+            ORDER BY period_year, period_no
+            """,
+            (year, period),
+        )
+        return [(r["period_year"], r["period_no"]) for r in cur.fetchall()]
 
 
 def unresolved_days(conn: psycopg.Connection, year: int, period: int) -> list[dict]:
@@ -290,24 +309,27 @@ def upsert_submission(
     digest: str,
     line_count: int,
     state: str,
+    *,
+    error: str | None = None,
 ) -> None:
     """Record (or refresh) the declaration we intend to file for a period."""
     with conn.cursor() as cur:
         cur.execute(
             """
             INSERT INTO submission (period_year, period_no, claim_type,
-                                    lines_digest, line_count, state)
-            VALUES (%s, %s, %s, %s, %s, %s)
+                                    lines_digest, line_count, state, last_error)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (period_year, period_no, claim_type) DO UPDATE SET
                 lines_digest = EXCLUDED.lines_digest,
                 line_count   = EXCLUDED.line_count,
                 state        = EXCLUDED.state,
+                last_error   = EXCLUDED.last_error,
                 updated_at   = now()
             -- A filed declaration is history. Never rewrite it, even if the
             -- classifier later changes its mind about one of the days.
             WHERE submission.state NOT IN ('submitted', 'in_flight')
             """,
-            (year, period, claim_type.value, digest, line_count, state),
+            (year, period, claim_type.value, digest, line_count, state, error),
         )
     conn.commit()
 
@@ -327,16 +349,26 @@ def get_submission(
 def approved_submissions(conn: psycopg.Connection) -> list[dict]:
     """Every period a human has approved and that has not been filed yet.
 
-    Selected by state, never by date. `build` runs on the 28th and defaults to
-    the *previous* month, so a submit that woke on the 1st and worked out
-    "previous month" for itself would name the month after the one that was
-    approved, and file the wrong period into a portal with no undo. The
-    approval already names its period; this reads it back.
+    Selected by state, never by date. `build` works on periods well behind today,
+    so a submit that worked out "previous month" for itself would name a different
+    month from the one that was approved, and file the wrong period into a portal
+    with no undo. The approval already names its period; this reads it back.
     """
     with conn.cursor() as cur:
         cur.execute(
             """SELECT * FROM submission
                WHERE state = 'approved'
+               ORDER BY period_year, period_no, claim_type"""
+        )
+        return cur.fetchall()
+
+
+def unsettled_submissions(conn: psycopg.Connection) -> list[dict]:
+    """Declarations whose click may have landed. Only AFAS can say."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """SELECT * FROM submission
+               WHERE state IN ('in_flight', 'needs_reconciliation')
                ORDER BY period_year, period_no, claim_type"""
         )
         return cur.fetchall()

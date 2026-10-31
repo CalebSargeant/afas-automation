@@ -196,6 +196,9 @@
         "homePagePath": {
           "type": "string"
         },
+        "claimsPagePath": {
+          "type": "string"
+        },
         "extra": {
           "type": "object",
           "description": "Verbatim extra ConfigMap keys.",

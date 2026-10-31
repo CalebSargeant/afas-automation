@@ -279,8 +279,20 @@ def sign_in(page: Page, creds: Credentials, *, timeout_ms: int = 120_000) -> Non
 
     raise EntraLoginError(
         f"sign-in did not complete within the deadline; last state {last_state!r}, "
-        f"password {'was' if typed_password else 'was not'} submitted, at {page.url[:120]}"
+        f"password {'was' if typed_password else 'was not'} submitted, "
+        f"pane {_pane_title(page)!r}, at {page.url[:120]}"
     )
+
+
+def _pane_title(page: Page) -> str:
+    """The heading of whatever pane stalled the sign-in. A state of "waiting" names nothing."""
+    try:
+        for handle in page.query_selector_all("[role='heading'], .text-title, #loginHeader"):
+            if handle.is_visible() and (text := (handle.inner_text() or "").strip()):
+                return text[:120]
+    except Exception:  # noqa: BLE001 - this only decorates an error already being raised
+        pass
+    return ""
 
 
 def _kmsi_button(page: Page):

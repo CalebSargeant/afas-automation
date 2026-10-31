@@ -49,6 +49,9 @@ def approval_card(
     digest: str,
     unresolved: list[date],
     dry_run: bool,
+    already: list[date] | None = None,
+    unrecorded: list[date] | None = None,
+    open_drafts: list[date] | None = None,
 ) -> list[dict]:
     """The monthly ask. Everything that will be filed is shown before approval."""
     label = "woon-werk" if claim_type is ClaimType.COMMUTE else "thuiswerkdagen"
@@ -83,6 +86,23 @@ def approval_card(
                 },
             }
         )
+
+    for icon, title, listed, note in (
+        (":warning:", "Nooit geclassificeerd", unrecorded, "Worden niet gedeclareerd."),
+        (":white_check_mark:", "Al in AFAS", already, "Niet nog een keer op deze declaratie."),
+        (":warning:", "Open concept in AFAS", open_drafts, "Blokkeert insturen van dit type."),
+    ):
+        if listed:
+            names = ", ".join(d.strftime("%d-%m") for d in listed)
+            blocks.append(
+                {
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": f"{icon} *{title}* ({len(listed)}): {names}\n_{note}_",
+                    },
+                }
+            )
 
     blocks.append(
         {

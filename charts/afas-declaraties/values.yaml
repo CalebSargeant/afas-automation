@@ -1,6 +1,6 @@
 # afas-declaraties
 #
-# One image, four workloads: three CronJobs (classify, digest, build) and a
+# One image, five workloads: four CronJobs (classify, digest, build, submit) and a
 # single-replica Deployment (slackd) that holds the Slack Socket Mode
 # connection. They differ only by entrypoint, which is why the commands live
 # here rather than in four Dockerfiles.
@@ -78,8 +78,9 @@ config:
   logLevel: info
   tz: Europe/Amsterdam
 
-  # DRY_RUN gates the path that spends real money: with it false, `build`
-  # actually submits a verzameldeclaratie in AFAS InSite. It defaults to "true"
+  # DRY_RUN gates the path that spends real money: with it false, `build` creates
+  # real drafts in AFAS InSite and `submit` files whatever Slack approved. With it
+  # true, `build` fills the real form and leaves it unsaved. It defaults to "true"
   # here and is flipped deliberately, per environment, by whoever owns the
   # deployment. A chart default that files expense claims on install would be
   # indefensible.
@@ -128,10 +129,12 @@ config:
   # holidays the calendar does not carry).
   excludedDates: ""
 
-  # InSite page slugs for the two claim forms. Employer-chosen publication
-  # names, so they default to empty and normally arrive from the vault.
+  # InSite page slugs for the two claim forms and the list that reads them
+  # back. Employer-chosen publication names, so they default to empty and
+  # normally arrive from the vault.
   commutePagePath: ""
   homePagePath: ""
+  claimsPagePath: ""
 
   # Free-form extra ConfigMap keys: KEY: value, rendered verbatim.
   extra: {}
@@ -190,6 +193,9 @@ externalSecret:
     # subcommand: without them each workload exits 2 before doing anything.
     - COMMUTE_PAGE_PATH
     - HOME_PAGE_PATH
+    # Read before anything is filed, and again to confirm it landed. Without it
+    # build and submit fail and alert; the other workloads do not need it.
+    - CLAIMS_PAGE_PATH
     - OP_SERVICE_ACCOUNT_TOKEN
     - OP_VAULT
     - SLACK_BOT_TOKEN
@@ -308,11 +314,16 @@ jobs:
         cpu: 500m
         memory: 512Mi
 
-  # 28th of the month: build the verzameldeclaratie in AFAS InSite. This is the
-  # workload DRY_RUN gates.
+  # Daily, and most days it reads the ledger and exits without opening a browser.
+  # A month falls due on the 28th of the month after it, and stays due until it
+  # has a card in Slack, so a failed run costs a day rather than a month. Daily
+  # also makes the cluster's CronJob alert useful: it fires after two missed
+  # intervals, which would be 62 days on a monthly schedule.
+  #
+  # This is one of the two workloads DRY_RUN gates.
   build:
     enabled: true
-    schedule: "0 6 28 * *"
+    schedule: "0 6 * * *"
     timeZone: Europe/Amsterdam
     browser: true
     concurrencyPolicy: Forbid
@@ -342,9 +353,9 @@ jobs:
   # not the calendar. Without it the approval click updates Postgres and stops
   # there, and the last mile into AFAS stays manual.
   #
-  # It takes no --period. `build` runs on the 28th for the previous month, so a
-  # period worked out from today's date would be a month off for every run that
-  # lands after the 1st. The approved row names its own period.
+  # It takes no --period. `build` works on periods well behind today, so a period
+  # worked out from today's date would be the wrong month. The approved row names
+  # its own period.
   submit:
     enabled: true
     schedule: "0 7 * * *"

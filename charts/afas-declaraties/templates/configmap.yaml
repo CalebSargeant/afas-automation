@@ -20,8 +20,8 @@ metadata:
 data:
   LOG_LEVEL: {{ .Values.config.logLevel | quote }}
   TZ: {{ .Values.config.tz | quote }}
-  # "true" unless someone has deliberately decided otherwise. False means the
-  # build job files a real claim in AFAS InSite.
+  # "true" unless someone has deliberately decided otherwise. False means build
+  # creates real drafts in AFAS InSite and submit files what Slack approved.
   DRY_RUN: {{ .Values.config.dryRun | toString | lower | quote }}
   HEADLESS: {{ .Values.config.headless | toString | lower | quote }}
   # "owa" drives Chromium; "mcp" reads the calendar over the Microsoft 365 MCP
@@ -49,6 +49,9 @@ data:
   {{- end }}
   {{- with .Values.config.homePagePath }}
   HOME_PAGE_PATH: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.config.claimsPagePath }}
+  CLAIMS_PAGE_PATH: {{ . | quote }}
   {{- end }}
   {{- range $key, $value := .Values.config.extra }}
   {{ $key }}: {{ $value | toString | quote }}

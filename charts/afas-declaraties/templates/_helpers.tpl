@@ -70,7 +70,7 @@ which only survives _guards.tpl if every required key has another source.
 {{- end -}}
 
 {{/*
-envFrom shared by slackd and all three CronJobs — the same settings drive every
+envFrom shared by slackd and all the CronJobs — the same settings drive every
 workload, so drift between them would be a bug, not a feature.
 
 Order matters: the ConfigMap first, the Secret second. A key present in both
