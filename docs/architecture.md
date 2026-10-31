@@ -13,11 +13,13 @@
 | Session | `src/afas_declaraties/session.py` | `open_session()`: a Chromium context that is signed in and settled. |
 | Credentials | `src/afas_declaraties/onepassword.py` | `get_field()` / `get_totp()` via the `op` CLI. |
 | Portal driver | `src/afas_declaraties/insite.py` | The verzameldeclaratie form: rows, verification, draft creation. |
+| Read-back | `src/afas_declaraties/readback.py` | What AFAS holds, read from *Mijn declaraties*. Build and submit trust this over the ledger. |
+| Alerts | `src/afas_declaraties/alerts.py` | Posts failed and skipped runs straight to Slack, without the database. |
 | Ledger | `src/afas_declaraties/store.py` | Raw-SQL Postgres store, advisory lock, approval digest, interaction dedupe. |
 | Config | `src/afas_declaraties/config.py` | `Config.from_env()`. No tenant-specific defaults. |
 | Slack blocks | `src/afas_declaraties/slack_blocks.py` | `weekly_digest()`, `approval_card()`. Pure. |
 | Slack daemon | `src/afas_declaraties/slackd.py` | Socket Mode app and the `/tmp/healthy` heartbeat. |
-| CLI | `src/afas_declaraties/cli.py` | `classify`, `digest`, `build`, `slackd`, `override`. |
+| CLI | `src/afas_declaraties/cli.py` | `classify`, `digest`, `build`, `submit`, `slackd`, `override`. |
 | Recon tooling | `scripts/` | `bootstrap_session.py`, `explore_insite.py`. Dev only. |
 | Chart | `charts/afas-declaraties/` | In-repo Helm chart, released with the image. |
 

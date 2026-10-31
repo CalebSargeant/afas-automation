@@ -30,7 +30,7 @@ Layout:
 
 - `src/afas_declaraties/` - the package. Entrypoint module `afas_declaraties.cli`,
   invoked as `python -m afas_declaraties.cli <command>`.
-  Commands: `classify`, `digest`, `build`, `slackd`, `override`.
+  Commands: `classify`, `digest`, `build`, `submit`, `slackd`, `override`.
 - `scripts/` - developer reconnaissance tooling. Not shipped, not scheduled.
 - `tests/` - pytest. The two suites that exist run with no browser, no network
   and no database.
@@ -148,13 +148,14 @@ needs.
 
 ## Deployment model
 
-One image, five commands, four workloads.
+One image, six commands, five workloads.
 
 | Workload | Kind | Schedule (Europe/Amsterdam) |
 |---|---|---|
 | `classify` | CronJob | nightly 23:30 |
 | `digest` | CronJob | Fridays 16:00 |
-| `build` | CronJob | 28th of the month 06:00 |
+| `build` | CronJob | daily 06:00, acts when a month is due |
+| `submit` | CronJob | daily 07:00 |
 | `slackd` | Deployment | always on, exactly 1 replica |
 
 `slackd` runs Slack Socket Mode, which dials out, so it has no Service and no
