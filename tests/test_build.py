@@ -84,6 +84,9 @@ class FakeStore:
     def set_submission_state(self, conn, y, p, ct, state, *, error=None, insite_ref=None):
         self.states.append((y, p, ct, state))
 
+    def interaction_seen(self, conn, key):
+        return key in self.said
+
     def claim_slack_interaction(self, conn, key, kind, actor):
         fresh = key not in self.said
         self.said.add(key)
@@ -134,7 +137,7 @@ class Portal:
         monkeypatch.setattr(cli, "read_lines", lambda *a, **kw: list(self.lines))
         monkeypatch.setattr(cli, "_fill_rows", self._fill)
         monkeypatch.setattr(cli, "create_draft", self._create)
-        monkeypatch.setattr(cli, "alert", lambda cfg, text: self.alerts.append(text))
+        monkeypatch.setattr(cli, "alert", lambda cfg, text: self.alerts.append(text) or True)
         monkeypatch.setattr(
             cli,
             "_post_card",
@@ -227,10 +230,20 @@ def test_the_other_claim_type_on_a_day_goes_to_a_human(cfg, monkeypatch):
     monkeypatch.setattr(cli, "store", store)
     portal = Portal(monkeypatch, [line(SEP_1, "Akkoord", ClaimType.HOME)])
 
-    assert build(cfg) == 0
+    assert build(cfg) == 1, "the rest of the month went ahead, and a human still has to step in"
     assert store.marked[0] == ([SEP_1], DayState.NEEDS_INPUT)
     assert portal.rows == [SEP_2]
     assert "01-09-2026" in portal.alerts[0]
+
+
+def test_filed_days_beside_a_rejected_one_do_not_mark_the_month_as_sent(cfg, monkeypatch):
+    store = FakeStore(commute(SEP_1, SEP_2))
+    monkeypatch.setattr(cli, "store", store)
+    Portal(monkeypatch, [line(SEP_1, "Akkoord"), line(SEP_2, "Afgewezen")])
+
+    assert build(cfg) == 1
+    assert store.states == []
+    assert ([SEP_2], DayState.NEEDS_INPUT) in store.marked
 
 
 def test_a_matching_draft_is_kept_not_made_twice(cfg, monkeypatch):
@@ -262,13 +275,30 @@ def test_another_open_draft_makes_this_one_wait(cfg, monkeypatch):
     monkeypatch.setattr(cli, "store", store)
     portal = Portal(monkeypatch, [line(JUNE, "Medewerker")])
 
-    assert build(cfg) == 0
+    assert build(cfg) == 1, "a month that waits is a skipped month, so the job says so"
     assert portal.created == 0
     assert store.upserts == []
     assert "02-06-2026" in portal.alerts[0]
 
-    assert build(cfg) == 0
+    assert build(cfg) == 1
     assert len(portal.alerts) == 1, "said once, it stays true until a human acts"
+
+
+def test_an_alert_slack_did_not_take_is_said_again_on_the_next_run(cfg, monkeypatch):
+    store = FakeStore(commute(SEP_1))
+    monkeypatch.setattr(cli, "store", store)
+    portal = Portal(monkeypatch, [line(JUNE, "Medewerker")])
+    posted = []
+    monkeypatch.setattr(cli, "alert", lambda cfg, text: bool(posted.append(text)))
+
+    assert build(cfg) == 1
+    assert build(cfg) == 1
+    assert len(posted) == 2, "the post failed both times, so nobody has been told yet"
+
+    monkeypatch.setattr(cli, "alert", lambda cfg, text: portal.alerts.append(text) or True)
+    assert build(cfg) == 1
+    assert build(cfg) == 1
+    assert len(portal.alerts) == 1
 
 
 def test_a_dry_run_rehearses_the_form_and_saves_nothing(cfg, monkeypatch):
@@ -313,7 +343,7 @@ def test_one_broken_form_does_not_cost_the_other_claim_type_its_month(cfg, monke
 def plan(cfg, store, monkeypatch, **kw):
     monkeypatch.setattr(cli, "store", store)
     said = []
-    monkeypatch.setattr(cli, "alert", lambda cfg, text: said.append(text))
+    monkeypatch.setattr(cli, "alert", lambda cfg, text: said.append(text) or True)
     return cli._plan_build(cfg, object(), [(2026, 9)]), said
 
 

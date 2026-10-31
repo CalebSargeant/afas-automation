@@ -301,6 +301,12 @@ def claim_slack_interaction(
     return fresh
 
 
+def interaction_seen(conn: psycopg.Connection, dedupe_key: str) -> bool:
+    with conn.cursor() as cur:
+        cur.execute("SELECT 1 FROM slack_interaction WHERE dedupe_key = %s", (dedupe_key,))
+        return cur.fetchone() is not None
+
+
 def upsert_submission(
     conn: psycopg.Connection,
     year: int,
@@ -388,6 +394,9 @@ def approve_submission(
     the one carried by the button. If days were added or removed since the card
     was posted, the approval is for different content and is refused -- an
     approval must never be replayable against a changed claim.
+
+    `drafted` is left out on purpose. It means a dry run rehearsed the form, and a
+    click on that card must not count once `DRY_RUN` is flipped.
     """
     current = claimable_days(conn, year, period, claim_type)
     live_digest = lines_digest([r["day"] for r in current], claim_type)
@@ -402,15 +411,37 @@ def approve_submission(
             """UPDATE submission SET state='approved', approved_by=%s, approved_at=now(),
                                      updated_at=now()
                WHERE period_year=%s AND period_no=%s AND claim_type=%s
-                 AND state IN ('drafted','awaiting_approval','rejected')
+                 AND state IN ('awaiting_approval','rejected')
                RETURNING id""",
             (actor, year, period, claim_type.value),
         )
         ok = cur.fetchone() is not None
     conn.commit()
     if not ok:
-        return False, "this period is not awaiting approval (already submitted, or in flight)"
+        return False, "this period is not awaiting approval (a dry run, already sent, or in flight)"
     return True, f"approved {len(current)} day(s)"
+
+
+def reject_submission(
+    conn: psycopg.Connection, year: int, period: int, claim_type: ClaimType
+) -> bool:
+    """False if it is no longer waiting on a human.
+
+    An older card keeps its buttons after a newer one replaced it. A click on it
+    must not rewrite a declaration that has gone in, or hide one still in flight
+    from the run that has to settle it.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """UPDATE submission SET state='rejected', last_error=NULL, updated_at=now()
+               WHERE period_year=%s AND period_no=%s AND claim_type=%s
+                 AND state IN ('awaiting_approval','approved')
+               RETURNING id""",
+            (year, period, claim_type.value),
+        )
+        ok = cur.fetchone() is not None
+    conn.commit()
+    return ok
 
 
 def set_submission_state(
@@ -422,13 +453,15 @@ def set_submission_state(
     *,
     error: str | None = None,
     insite_ref: str | None = None,
+    digest: str | None = None,
 ) -> None:
     with conn.cursor() as cur:
         cur.execute(
             """UPDATE submission SET state=%s, last_error=%s,
-                      insite_ref=COALESCE(%s, insite_ref), updated_at=now()
+                      insite_ref=COALESCE(%s, insite_ref),
+                      lines_digest=COALESCE(%s, lines_digest), updated_at=now()
                WHERE period_year=%s AND period_no=%s AND claim_type=%s""",
-            (state, error, insite_ref, year, period, claim_type.value),
+            (state, error, insite_ref, digest, year, period, claim_type.value),
         )
     conn.commit()
 

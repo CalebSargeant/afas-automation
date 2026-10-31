@@ -74,9 +74,13 @@ def _lock_held(cfg: Config, command: str) -> int:
 
 
 def _alert_once(cfg: Config, conn, key: str, text: str) -> None:
-    """For a condition that stays true until a human acts, so it is said once."""
-    if store.claim_slack_interaction(conn, f"alert:{key}", "alert", "afas"):
-        alert(cfg, text)
+    """For a condition that stays true until a human acts, so it is said once.
+
+    Said means the post went through. A failed one is tried again on the next run.
+    """
+    key = f"alert:{key}"
+    if not store.interaction_seen(conn, key) and alert(cfg, text):
+        store.claim_slack_interaction(conn, key, "alert", "afas")
 
 
 def _read_calendar(cfg: Config, start: date, end: date) -> tuple[list, bool]:
@@ -317,7 +321,7 @@ def _build_one(cfg: Config, conn, page, year, period, claim_type, days) -> bool:
 
     todo = sorted(pos.draft + pos.absent)
     if not todo:
-        if pos.filed:
+        if pos.filed and not pos.conflict:
             store.set_submission_state(conn, year, period, claim_type, "submitted")
         logger.info("build: %s has nothing left to file", label)
         return not pos.conflict
@@ -353,7 +357,7 @@ def _build_one(cfg: Config, conn, page, year, period, claim_type, days) -> bool:
                 f"{label} wacht: er staat al een open {claim_type.value}-concept in AFAS "
                 f"({_dates(pos.other_drafts)}). Stuur dat in of verwijder het.",
             )
-            return True
+            return False
         if pos.absent:
             _fill_rows(cfg, page, path, pos.absent)
             create_draft(page, dry_run=False)
@@ -383,7 +387,7 @@ def _build_one(cfg: Config, conn, page, year, period, claim_type, days) -> bool:
     )
     store.upsert_submission(conn, year, period, claim_type, digest, len(todo), state)
     logger.info("build: %s -> %d line(s), state=%s", label, len(todo), state)
-    return True
+    return not pos.conflict
 
 
 def cmd_build(cfg: Config, args) -> int:
@@ -482,10 +486,17 @@ def _settle(cfg: Config, conn, page, row: dict) -> bool:
         _record_filed(cfg, conn, year, period, claim_type, days)
         return True
     if days and pos.draft == sorted(days):
+        # The card goes first: if Slack fails, this run comes back here tomorrow.
+        _post_card(cfg, conn, year, period, claim_type, days, open_drafts=pos.other_drafts)
         store.set_submission_state(
-            conn, year, period, claim_type, "awaiting_approval", error="click did not land"
+            conn,
+            year,
+            period,
+            claim_type,
+            "awaiting_approval",
+            error="click did not land",
+            digest=store.lines_digest(days, claim_type),
         )
-        _post_card(cfg, conn, year, period, claim_type, days)
         alert(cfg, f"{label}: insturen is niet aangekomen, het staat nog als concept in AFAS.")
         return False
     if days and pos.absent == sorted(days):
@@ -494,12 +505,15 @@ def _settle(cfg: Config, conn, page, row: dict) -> bool:
         )
         alert(cfg, f"{label}: het concept is weg uit AFAS. De volgende build maakt het opnieuw.")
         return False
-    alert(
-        cfg,
+    # A rejection lands here too. The next build reads AFAS again and clicks nothing
+    # without a new approval, so `failed` is safe and this stops repeating every day.
+    problem = (
         f"{label}: onduidelijke staat, kijk in AFAS. Ingestuurd: {_dates(pos.filed)}, "
         f"concept: {_dates(pos.draft)}, ontbreekt: {_dates(pos.absent)}, "
-        f"anders: {_dates(pos.conflict)}.",
+        f"anders: {_dates(pos.conflict)}."
     )
+    store.set_submission_state(conn, year, period, claim_type, "failed", error=problem[:400])
+    alert(cfg, problem)
     return False
 
 
@@ -538,20 +552,24 @@ def _file(cfg: Config, conn, page, row: dict) -> bool:
         _record_filed(cfg, conn, year, period, claim_type, days)
         return True
 
-    problem = None
     if pos.draft != sorted(days):
+        # What was approved is no longer there, so the approval goes with it. Left
+        # standing, `build` would skip this row and nothing could ever move it.
         problem = (
             f"{label}: het concept in AFAS klopt niet met wat is goedgekeurd. "
             f"Concept: {_dates(pos.draft)}, ingestuurd: {_dates(pos.filed)}, "
-            f"ontbreekt: {_dates(pos.absent)}, anders: {_dates(pos.conflict)}."
+            f"ontbreekt: {_dates(pos.absent)}, anders: {_dates(pos.conflict)}. "
+            "De volgende build maakt een nieuwe kaart."
         )
-    elif pos.other_drafts:
+        store.set_submission_state(conn, year, period, claim_type, "failed", error=problem)
+        alert(cfg, problem)
+        return False
+    if pos.other_drafts:
+        # The approved draft is intact, so the approval stands and tomorrow's run looks again.
         problem = (
             f"{label}: er staat nog een open concept in AFAS ({_dates(pos.other_drafts)}) en de "
             "takenlijst kan ze niet uit elkaar houden. Stuur dat in of verwijder het."
         )
-    if problem:
-        # Nothing was clicked, so the approval stands and tomorrow's run looks again.
         store.set_submission_state(conn, year, period, claim_type, "approved", error=problem)
         alert(cfg, problem)
         return False
@@ -618,7 +636,7 @@ def cmd_submit(cfg: Config, args) -> int:
         unsettled = store.unsettled_submissions(conn)
 
         if cfg.dry_run:
-            # There is no draft behind a dry run, so there is nothing to open.
+            # A live approval caught by a flip back to dry run. Going live again posts a new card.
             for row in rows:
                 year, period = row["period_year"], row["period_no"]
                 claim_type = ClaimType(row["claim_type"])

@@ -197,10 +197,10 @@ def test_dry_run_then_live_builds_for_real(conn, cfg, monkeypatch):
     row = store.get_submission(conn, 2026, 9, ClaimType.COMMUTE)
     assert row["state"] == "drafted"
 
-    ok, message = store.approve_submission(
-        conn, 2026, 9, ClaimType.COMMUTE, row["lines_digest"], "U1"
-    )
-    assert ok, message
+    # A click on a card still in Slack from a rehearsal must not count once live.
+    ok, _ = store.approve_submission(conn, 2026, 9, ClaimType.COMMUTE, row["lines_digest"], "U1")
+    assert not ok
+    assert not store.reject_submission(conn, 2026, 9, ClaimType.COMMUTE)
     assert submit(cfg) == 0
     assert portal.lines == []
     assert store.get_submission(conn, 2026, 9, ClaimType.COMMUTE)["state"] == "drafted"
@@ -208,7 +208,57 @@ def test_dry_run_then_live_builds_for_real(conn, cfg, monkeypatch):
     cfg.dry_run = False
     assert cli.cmd_build(cfg, argparse.Namespace(period="2026-09")) == 0
     assert len(portal.lines) == 2
-    assert store.get_submission(conn, 2026, 9, ClaimType.COMMUTE)["state"] == "awaiting_approval"
+    row = store.get_submission(conn, 2026, 9, ClaimType.COMMUTE)
+    assert row["state"] == "awaiting_approval"
+    ok, message = store.approve_submission(
+        conn, 2026, 9, ClaimType.COMMUTE, row["lines_digest"], "U1"
+    )
+    assert ok, message
+
+
+def test_a_live_approval_caught_by_a_flip_back_to_dry_run_files_nothing(conn, cfg, monkeypatch):
+    office(conn, *SEP_DAYS)
+    portal = Portal(monkeypatch)
+    assert build(cfg) == 0
+    row = store.get_submission(conn, 2026, 9, ClaimType.COMMUTE)
+    assert store.approve_submission(conn, 2026, 9, ClaimType.COMMUTE, row["lines_digest"], "U1")[0]
+
+    cfg.dry_run = True
+    assert submit(cfg) == 0
+    assert {line.status for line in portal.lines} == {"Medewerker"}
+    assert store.get_submission(conn, 2026, 9, ClaimType.COMMUTE)["state"] == "drafted"
+
+
+def test_a_stale_reject_cannot_rewrite_what_has_gone_in(conn, cfg, monkeypatch):
+    office(conn, *SEP_DAYS)
+    portal = Portal(monkeypatch)
+    assert build(cfg) == 0
+    row = store.get_submission(conn, 2026, 9, ClaimType.COMMUTE)
+
+    assert store.reject_submission(conn, 2026, 9, ClaimType.COMMUTE)
+    ok, message = store.approve_submission(
+        conn, 2026, 9, ClaimType.COMMUTE, row["lines_digest"], "U1"
+    )
+    assert ok, message
+
+    for state in ("in_flight", "needs_reconciliation", "submitted"):
+        store.set_submission_state(conn, 2026, 9, ClaimType.COMMUTE, state)
+        assert not store.reject_submission(conn, 2026, 9, ClaimType.COMMUTE)
+        assert store.get_submission(conn, 2026, 9, ClaimType.COMMUTE)["state"] == state
+    assert portal.alerts == []
+
+
+def test_said_once_means_the_post_went_through(conn, cfg, monkeypatch):
+    posts = []
+    monkeypatch.setattr(cli, "alert", lambda cfg, text: bool(posts.append(text)))
+    cli._alert_once(cfg, conn, "k", "t")
+    cli._alert_once(cfg, conn, "k", "t")
+    assert len(posts) == 2
+
+    monkeypatch.setattr(cli, "alert", lambda cfg, text: posts.append(text) or True)
+    cli._alert_once(cfg, conn, "k", "t")
+    cli._alert_once(cfg, conn, "k", "t")
+    assert len(posts) == 3
 
 
 def test_a_click_that_died_midway_settles_from_afas(conn, cfg, monkeypatch):

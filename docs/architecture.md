@@ -95,7 +95,12 @@ is picked up the next morning instead of being lost.
    post leaves nothing recorded and the next morning tries again.
 
 A live run also holds back when another draft of that claim type is open, because
-the task list cannot tell two drafts apart. That month waits, with one alert.
+the task list cannot tell two drafts apart. That month waits, with one alert, and
+the job exits 1 each day until it clears, which keeps the cluster's alert on it.
+
+A dry card offers corrections only. There is nothing behind it to approve, and
+`approve_submission` refuses a `drafted` row, so a click on a rehearsal cannot
+count after the flip to live.
 
 !!! danger "The final submission is live"
     *Declaratie insturen* on the draft task is the one irreversible step in
@@ -129,9 +134,10 @@ Before each claim type:
    approved, the approval was for different content: the submission drops back
    to `awaiting_approval`, an alert goes out and nothing is filed.
 2. Read *Mijn declaraties*. If every day is already filed, record that and do not
-   click. The draft must hold exactly the approved days, and no other draft of
-   that type may be open. Otherwise nothing is clicked, the approval stands, and
-   an alert goes out.
+   click. The draft must hold exactly the approved days, or the approval is void:
+   the submission goes to `failed`, an alert goes out and the next build starts
+   over with a new card. If another draft of that type is open, the approval stands
+   and tomorrow's run looks again. Neither case clicks anything.
 3. `in_flight` is written **before** the click, so a process that dies mid-click
    cannot be read as "never submitted" and retried.
 4. Read the list again. The submission becomes `submitted` only when AFAS shows
@@ -139,9 +145,11 @@ Before each claim type:
    alert.
 
 A submission left in `in_flight` or `needs_reconciliation` is settled on the next
-run by reading AFAS, never by clicking again. Under `DRY_RUN` there is no draft
-behind the approval, so no browser opens: the state returns to `drafted` and a
-Slack note says nothing was filed.
+run by reading AFAS, never by clicking again. A state it cannot place, a rejection
+say, goes to `failed` with an alert, and the next build asks a human about the days.
+A live approval caught by a flip back to `DRY_RUN` is not filed: no browser opens,
+the state returns to `drafted`, a Slack note says so, and going live again posts a
+new card.
 
 Without this job the approval click updates Postgres and stops there: the last
 step into AFAS stays manual, which is the thing the pipeline exists to remove.
@@ -162,8 +170,9 @@ report. The scheduled commands all go through the same wrapper in `cli.main()`:
   days that arrive after a claim was sent.
 
 A condition that stays true until a human acts is said once, through the same
-replay table Slack interactions use. Missing configuration still exits 2 without
-an alert, because the job has no channel to post to yet.
+replay table Slack interactions use, and it only counts as said once the post went
+through. Missing configuration still exits 2 without an alert, because the job has
+no channel to post to yet.
 
 ## The classification rules
 

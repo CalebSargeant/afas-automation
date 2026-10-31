@@ -117,6 +117,18 @@ def approval_card(
     )
 
     value = decision_value(year, period, claim_type, digest)
+    correct = {
+        "type": "button",
+        "action_id": CORRECT,
+        "text": {"type": "plain_text", "text": "Dagen corrigeren"},
+        "value": value,
+    }
+    # A rehearsal holds nothing to decide on, and a decision on one must not outlive
+    # the flip to live.
+    if dry_run:
+        blocks.append({"type": "actions", "block_id": "period_decision", "elements": [correct]})
+        return blocks
+
     blocks.append(
         {
             "type": "actions",
@@ -146,12 +158,7 @@ def approval_card(
                     "text": {"type": "plain_text", "text": "Afwijzen"},
                     "value": value,
                 },
-                {
-                    "type": "button",
-                    "action_id": CORRECT,
-                    "text": {"type": "plain_text", "text": "Dagen corrigeren"},
-                    "value": value,
-                },
+                correct,
             ],
         }
     )

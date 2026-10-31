@@ -563,3 +563,26 @@ The woon-werk form holds `1,00` in a disabled field. The thuiswerk form holds `1
 Comparing them as strings raises on a correct row, so `verify_row` and
 `set_or_verify_quantity` compare numbers through `same_quantity`. A quantity that
 already holds the right count is left alone.
+
+## The claim list shows an open draft twice on one page
+
+An open draft has a grid of its own above the main one, and its lines are in the
+main grid as well. Counting lines per page therefore doubles every draft line, and
+treating two lines on a day as a conflict then sends every draft to a human. Count
+per grid: `parse_lines` splits on the header, so a line held twice by one grid is a
+real duplicate and a line in both grids is one line.
+
+## An enabled pager that moved nothing is not the end of the list
+
+On the real list the last page's *Volgende* is disabled. Reading "the text did not
+change" as the end instead lets one slow render pass part of the list off as all of
+it, and a filed day on the unread page looks absent and gets claimed twice. So
+`_turn_page` waits for the page to change and settle, and raises if it never does.
+
+## A click on a dry card must not count once live
+
+`approve_submission` used to accept `drafted`, which is the state a dry run leaves.
+A rehearsal's card stays in Slack with its buttons after `DRY_RUN` is flipped, its
+footer says nothing will be filed, and clicking it approved a real filing if the
+lines matched. Dry cards now offer corrections only, and `drafted` cannot be
+approved or rejected, which also covers cards already posted.

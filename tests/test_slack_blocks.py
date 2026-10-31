@@ -7,6 +7,7 @@ import pytest
 from afas_declaraties.models import ClaimType
 from afas_declaraties.slack_blocks import (
     APPROVE,
+    CORRECT,
     SEP,
     approval_card,
     corrections_modal,
@@ -109,6 +110,21 @@ def test_dry_run_is_stated_on_the_card():
         dry_run=True,
     )
     assert "DRY RUN" in " ".join(str(b) for b in blocks)
+
+
+def test_a_dry_card_cannot_be_approved_or_rejected():
+    """A decision on a rehearsal must not outlive the flip to live."""
+    blocks = approval_card(
+        year=2026,
+        period=8,
+        claim_type=ClaimType.HOME,
+        days=DAYS,
+        digest="d",
+        unresolved=[],
+        dry_run=True,
+    )
+    actions = next(b for b in blocks if b["type"] == "actions")
+    assert [e["action_id"] for e in actions["elements"]] == [CORRECT]
 
 
 def test_corrections_modal_block_ids_parse_back_to_dates():

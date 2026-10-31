@@ -44,6 +44,7 @@ class FakeStore:
         self._unsettled = list(unsettled)
         self._lock = lock
         self.states: list[tuple] = []
+        self.digests: list[str] = []
         self.marked: list[list[date]] = []
         self.claimable_calls: list[tuple] = []
 
@@ -87,8 +88,10 @@ class FakeStore:
     def browser_lock(self, conn):
         yield self._lock
 
-    def set_submission_state(self, conn, year, period, claim_type, state, error=None):
+    def set_submission_state(self, conn, year, period, claim_type, state, error=None, digest=None):
         self.states.append((year, period, claim_type, state, error))
+        if digest:
+            self.digests.append(digest)
 
     def mark_days_state(self, conn, days, state):
         self.marked.append(list(days))
@@ -295,7 +298,7 @@ def test_a_draft_that_does_not_match_is_never_clicked(cfg, monkeypatch, alerts):
 
     assert cli.cmd_submit(cfg, args()) == 1
     assert portal.clicks == 0
-    assert states(store) == [(2026, 8, "approved")], "the approval stands, nothing was clicked"
+    assert states(store) == [(2026, 8, "failed")], "left approved, build would skip it for good"
     assert "klopt niet" in alerts[0]
 
 
@@ -308,6 +311,7 @@ def test_another_open_draft_blocks_filing(cfg, monkeypatch, alerts):
 
     assert cli.cmd_submit(cfg, args()) == 1
     assert portal.clicks == 0
+    assert states(store) == [(2026, 8, "approved")], "the approved draft is intact, so it stands"
     assert "02-06-2026" in alerts[0]
 
 
@@ -327,6 +331,7 @@ def test_lines_already_filed_are_recorded_without_a_click(cfg, monkeypatch, aler
         ([FiledLine(DAY, "Leidinggevende", ClaimType.COMMUTE)], "submitted", 0),
         ([FiledLine(DAY, "Medewerker", ClaimType.COMMUTE)], "awaiting_approval", 1),
         ([FiledLine(date(2026, 6, 1), "Akkoord", ClaimType.COMMUTE)], "failed", 1),
+        ([FiledLine(DAY, "Afgewezen", ClaimType.COMMUTE)], "failed", 1),
     ],
 )
 def test_an_interrupted_click_is_settled_from_afas_and_never_reclicked(
@@ -340,6 +345,27 @@ def test_an_interrupted_click_is_settled_from_afas_and_never_reclicked(
     assert cli.cmd_submit(cfg, args()) == code
     assert portal.clicks == 0
     assert states(store) == [(2026, 8, expected_state)]
+
+
+def test_a_click_that_did_not_land_gets_its_card_before_its_state(cfg, monkeypatch, alerts):
+    """Waiting on a card that never went out, nothing would ever post it again."""
+    row = submission(2026, 8, ClaimType.COMMUTE, state="in_flight")
+    store = FakeStore([], unsettled=[row])
+    monkeypatch.setattr(cli, "store", store)
+    Portal(monkeypatch, draft(ClaimType.COMMUTE))
+
+    def slack_down(*a, **kw):
+        raise RuntimeError("slack is down")
+
+    monkeypatch.setattr(cli, "_post_card", slack_down)
+    with pytest.raises(RuntimeError):
+        cli.cmd_submit(cfg, args())
+    assert store.states == [], "still unsettled, so the next run comes back to it"
+
+    monkeypatch.setattr(cli, "_post_card", lambda *a, **kw: None)
+    assert cli.cmd_submit(cfg, args()) == 1
+    assert states(store) == [(2026, 8, "awaiting_approval")]
+    assert store.digests == ["d0"], "the row has to match what the new card shows"
 
 
 def test_a_held_lock_is_a_failed_run_and_alerts(cfg, monkeypatch, alerts):

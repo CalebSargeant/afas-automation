@@ -61,6 +61,30 @@ def test_an_unreadable_row_raises_rather_than_under_reporting():
         parse_lines(grid(row("dinsdag", "2 juni", "Medewerker", "Thuiswerkdagen")))
 
 
+def test_a_row_that_lost_its_weekday_raises_rather_than_being_skipped():
+    with pytest.raises(PortalChanged):
+        parse_lines(grid(row("", "02-06-2026", "Medewerker", "Thuiswerkdagen")))
+
+
+def test_an_open_draft_shown_in_both_grids_is_one_line():
+    """The real page: the draft has a grid of its own and also sits in the main one."""
+    line = row("dinsdag", "02-06-2026", "Medewerker", "Thuiswerkdagen")
+    other = row("maandag", "01-06-2026", "Akkoord", "Woon-werk: Aantal reisbewegingen")
+    assert parse_lines(grid(line) + grid(line, other)) == [
+        FiledLine(date(2026, 6, 2), "Medewerker", ClaimType.HOME),
+        FiledLine(date(2026, 6, 1), "Akkoord", ClaimType.COMMUTE),
+    ]
+
+
+def test_a_day_entered_twice_in_one_grid_stays_two_lines_and_is_a_conflict():
+    """Filing that draft would claim the day twice while the ledger records it once."""
+    day = date(2026, 9, 1)
+    line = row("dinsdag", "01-09-2026", "Medewerker", "Thuiswerkdagen")
+    lines = parse_lines(grid(line, line))
+    assert len(lines) == 2
+    assert position(lines, ClaimType.HOME, [day]).conflict == [day]
+
+
 def test_position_sorts_days_by_what_afas_shows():
     lines = [
         FiledLine(date(2026, 9, 1), "Akkoord", ClaimType.COMMUTE),
@@ -101,7 +125,17 @@ class FakePager:
         return self.page.position[self.index] < len(self.page.grids[self.index]) - 1
 
     def click(self, timeout=None):
+        self.page.stale = self.page.render()
+        self.page.settling = self.page.lag
         self.page.position[self.index] += 1
+
+
+class StuckPager(FakePager):
+    def is_enabled(self):
+        return True
+
+    def click(self, timeout=None):
+        pass
 
 
 class FakePagers:
@@ -118,22 +152,35 @@ class FakePagers:
 class FakePage:
     """Each grid is a list of pages; each pager walks its own grid."""
 
-    def __init__(self, *grids):
+    def __init__(self, *grids, lag=0):
         self.grids = grids
         self.position = [0] * len(grids)
         self.visited = []
+        self.lag = lag
+        self.settling = 0
+        self.stale = ""
 
     def goto(self, url, **kw):
         self.visited.append(url)
 
     def wait_for_timeout(self, ms):
-        pass
+        self.settling = max(0, self.settling - 1)
+
+    def render(self):
+        return grid(*[g[self.position[i]] for i, g in enumerate(self.grids)])
 
     def inner_text(self, selector):
-        return grid(*[g[self.position[i]] for i, g in enumerate(self.grids)])
+        return self.stale if self.settling else self.render()
 
     def get_by_role(self, role, name):
         return FakePagers(self)
+
+
+class StuckPage(FakePage):
+    def get_by_role(self, role, name):
+        pagers = FakePagers(self)
+        pagers.nth = lambda index: StuckPager(self, index)
+        return pagers
 
 
 def test_every_page_of_every_pager_is_read():
@@ -155,6 +202,22 @@ def test_every_page_of_every_pager_is_read():
         date(2026, 7, 20),
         date(2026, 7, 27),
     }
+
+
+def test_a_slow_pager_is_waited_for_and_not_read_as_the_end_of_the_list():
+    """Reading on would leave a filed day looking absent, and it would be claimed twice."""
+    pages = [
+        row("maandag", "13-07-2026", "Akkoord", "Woon-werk"),
+        row("maandag", "20-07-2026", "Akkoord", "Woon-werk"),
+    ]
+    lines = read_lines(FakePage(pages, lag=4), "host", "/claims")
+    assert {line.day for line in lines} == {date(2026, 7, 13), date(2026, 7, 20)}
+
+
+def test_an_enabled_pager_that_never_moves_is_a_failed_read():
+    page = StuckPage([row("maandag", "13-07-2026", "Akkoord", "Woon-werk")])
+    with pytest.raises(PortalChanged):
+        read_lines(page, "host", "/claims")
 
 
 def test_a_list_with_no_lines_is_a_failed_read():

@@ -13,11 +13,12 @@ from __future__ import annotations
 
 import logging
 import re
+from collections import Counter
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date, datetime
 
-from playwright.sync_api import Page
+from playwright.sync_api import Locator, Page
 
 from .config import ConfigError
 from .insite import PortalChanged
@@ -31,10 +32,15 @@ STATUS_DRAFT = "Medewerker"
 STATUS_FILED = frozenset({"Leidinggevende", "Akkoord"})
 
 NEXT_PAGE = "Volgende"
+# shortcut: 40 pages hold about 400 lines, some 18 months of claims. It raises when
+# reached, and then the list needs a date filter rather than a bigger number.
 MAX_PAGES = 40
+PAGER_POLL_MS = 3_000
+PAGER_POLLS = 10
 
 _HEADER = "Datum boeking\tDatum\tStatus\tSoort declaratie"
 _ROW = re.compile(r"(maandag|dinsdag|woensdag|donderdag|vrijdag|zaterdag|zondag)\t")
+_DATE = re.compile(r"\d{2}-\d{2}-\d{4}")
 
 
 @dataclass(frozen=True)
@@ -53,8 +59,8 @@ class Position:
     filed: list[date]
     draft: list[date]
     absent: list[date]
-    #: The other claim type, or a status not known here (a rejection, say). Not
-    #: safe to file over, and not proof of filing either.
+    #: The other claim type, a status not known here (a rejection, say), or more
+    #: than one line on the day. Not safe to file over, and not proof of filing either.
     conflict: list[date]
     #: Open draft lines of this claim type on days outside the set.
     other_drafts: list[date]
@@ -69,20 +75,14 @@ def _claim_type(soort: str) -> ClaimType | None:
     return None
 
 
-def parse_lines(text: str) -> list[FiledLine]:
-    """Lines from one rendered page of the claim list.
-
-    Columns: Dag, Datum boeking, Datum, Status, Soort declaratie, and more. A row
-    that cannot be read raises: skipping it would under-report what is filed.
-    """
-    flat = text.replace("\n\t\n", "\t")
-    if _HEADER not in flat:
-        raise PortalChanged("the claim list did not render the expected columns")
-
+def _grid_lines(grid: str) -> list[FiledLine]:
+    """A row that cannot be read raises: skipping it would under-report what is filed."""
     lines = []
-    for raw in flat.splitlines():
+    for raw in grid.splitlines():
         row = raw.lstrip("\t ")
         if not _ROW.match(row):
+            if "\t" in row and _DATE.search(row):
+                raise PortalChanged(f"unreadable claim row: {row[:80]!r}")
             continue
         cells = [cell.strip() for cell in row.split("\t")]
         try:
@@ -93,6 +93,41 @@ def parse_lines(text: str) -> list[FiledLine]:
     return lines
 
 
+def parse_lines(text: str) -> list[FiledLine]:
+    """Lines from one rendered page of the claim list.
+
+    Columns: Dag, Datum boeking, Datum, Status, Soort declaratie, and more. An open
+    draft shows in its own grid and again in the main one, so a line counts once per
+    page unless one grid really holds it twice.
+    """
+    grids = text.replace("\n\t\n", "\t").split(_HEADER)
+    if len(grids) < 2:
+        raise PortalChanged("the claim list did not render the expected columns")
+
+    counts: Counter[FiledLine] = Counter()
+    for grid in grids[1:]:
+        counts |= Counter(_grid_lines(grid))
+    return list(counts.elements())
+
+
+def _turn_page(page: Page, pager: Locator, text: str) -> str:
+    """Click a pager and return the page it brought up.
+
+    Only a disabled pager means the end. An enabled one that moves nothing is a slow
+    or broken portal, and reading on would pass part of the list off as all of it,
+    which makes a filed day look absent and gets it claimed twice.
+    """
+    pager.click(timeout=15_000)
+    previous = text
+    for _ in range(PAGER_POLLS):
+        page.wait_for_timeout(PAGER_POLL_MS)
+        current = page.inner_text("body")
+        if current != text and current == previous:
+            return current
+        previous = current
+    raise PortalChanged(f"a {NEXT_PAGE!r} pager is enabled but its page never settled")
+
+
 def read_lines(page: Page, host: str, path: str) -> list[FiledLine]:
     """Every line on the claim list, across all its pagers."""
     if not path:
@@ -101,34 +136,27 @@ def read_lines(page: Page, host: str, path: str) -> list[FiledLine]:
     page.goto(f"https://{host}{path}", wait_until="domcontentloaded", timeout=90_000)
     page.wait_for_timeout(7_000)
 
-    seen: dict[tuple, FiledLine] = {}
-    spent: set[int] = set()
+    # shortcut: a day entered twice is missed if the page break falls between the two,
+    # because the same line also comes round again on every page of the other grid.
+    seen: Counter[FiledLine] = Counter()
     text = page.inner_text("body")
     for _ in range(MAX_PAGES):
-        for line in parse_lines(text):
-            seen[(line.day, line.status, line.claim_type)] = line
+        seen |= Counter(parse_lines(text))
 
         pagers = page.get_by_role("button", name=NEXT_PAGE)
-        moved = False
-        for i in range(pagers.count()):
-            pager = pagers.nth(i)
-            if i in spent or not (pager.is_visible() and pager.is_enabled()):
-                continue
-            pager.click(timeout=15_000)
-            page.wait_for_timeout(4_500)
-            after = page.inner_text("body")
-            if after == text:
-                spent.add(i)
-                continue
-            text, moved = after, True
-            break
-
-        if not moved:
+        live = [
+            pager
+            for pager in (pagers.nth(i) for i in range(pagers.count()))
+            if pager.is_visible() and pager.is_enabled()
+        ]
+        if not live:
             # This account has filed before, so an empty list is a failed read.
             if not seen:
                 raise PortalChanged("the claim list rendered no lines at all")
-            logger.info("readback: %d line(s) in AFAS", len(seen))
-            return list(seen.values())
+            lines = list(seen.elements())
+            logger.info("readback: %d line(s) in AFAS", len(lines))
+            return lines
+        text = _turn_page(page, live[0], text)
 
     raise PortalChanged(f"the claim list was still paging after {MAX_PAGES} pages")
 
@@ -144,14 +172,13 @@ def position(lines: Iterable[FiledLine], claim_type: ClaimType, days: Iterable[d
     filed, draft, absent, conflict = [], [], [], []
     for day in sorted(wanted):
         here = by_day.get(day, [])
-        statuses = {line.status for line in here}
         if not here:
             absent.append(day)
-        elif any(line.claim_type is not claim_type for line in here):
+        elif len(here) > 1 or here[0].claim_type is not claim_type:
             conflict.append(day)
-        elif statuses == {STATUS_DRAFT}:
+        elif here[0].status == STATUS_DRAFT:
             draft.append(day)
-        elif statuses <= STATUS_FILED:
+        elif here[0].status in STATUS_FILED:
             filed.append(day)
         else:
             conflict.append(day)
