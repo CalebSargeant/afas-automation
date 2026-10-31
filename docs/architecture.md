@@ -68,28 +68,40 @@ stuck in a sign-in flow.
 
 ### Build
 
-Defaults to the **previous** month, and runs on the 28th so there is room to fix
-a problem before the period closes.
+Runs every morning at 06:00, and most mornings exits before opening a browser. A
+month falls due on the 28th of the month after it. `store.open_periods()` also
+returns any older month that still holds an open day, so a month that failed once
+is picked up the next morning instead of being lost.
 
-1. `store.unresolved_days()` is logged loudly. Unresolved days are **not**
-   claimed, they are reported.
-2. Take `store.claimable_days()` for the period and each claim type, and open
-   that type's page slug.
-3. For each day: `add_row()` (discovering the window index), `fill_row()`,
+1. `_plan_build()` works from the ledger alone: which due periods hold
+   `store.claimable_days()` that no card or sent claim already covers. A period
+   with only unresolved days raises one alert. Unresolved days are **not**
+   claimed.
+2. `readback.read_lines()` reads *Mijn declaraties*, and `readback.position()`
+   sorts each day into filed, draft, absent or conflict. AFAS outranks the ledger:
+   a filed day is marked `submitted` and not offered again, and a day holding
+   another claim type or an unknown status goes to `needs_input` with an alert.
+3. For each absent day: `add_row()` (discovering the window index), `fill_row()`,
    `verify_row()`, `confirm_row()`.
 4. `create_draft()` clicks the page-level `Aanmaken`, producing a
    *Declaratie voorbereiden* task the employee can still amend or delete. It is a
    no-op under `DRY_RUN`, which is the difference between submission state
-   `drafted` and `awaiting_approval`.
-5. Record the submission with its `lines_digest`, mark the days `drafted`, and
-   post the approval card to Slack.
+   `drafted` and `awaiting_approval`. A live run reads the list again and requires
+   the days to show as a draft.
+5. Post the approval card to Slack, then record the submission with its
+   `lines_digest` and mark the days `drafted`. The card goes first so a failed
+   post leaves nothing recorded and the next morning tries again.
+
+A live run also holds back when another draft of that claim type is open, because
+the task list cannot tell two drafts apart. That month waits, with one alert.
 
 !!! danger "The final submission is live"
     *Declaratie insturen* on the draft task is the one irreversible step in
-    the system, and `cli submit` performs it whenever `DRY_RUN=false`. Three
+    the system, and `cli submit` performs it whenever `DRY_RUN=false`. Four
     gates stand in front of it: `DRY_RUN` defaults to true, an allow-listed
-    Slack user must approve, and the approval's `lines_digest` is re-derived
-    from the ledger and must still match.
+    Slack user must approve, the approval's `lines_digest` is re-derived from the
+    ledger and must still match, and AFAS must show exactly the approved days as
+    the only open draft of that type.
 
     Task selection matches the form slug, and two open drafts of the same claim
     type are refused rather than guessed -- the task list shows no period, and
@@ -103,25 +115,53 @@ a problem before the period closes.
 Runs daily at 07:00 and files whatever a human approved. Most mornings it reads
 one row, finds nothing in `approved` and exits before opening a browser.
 
-It takes **no period**. `build` runs on the 28th for the *previous* month, so a
-submit that woke on the 1st and worked out "last month" for itself would name
-the month after the one that was approved -- and the portal has no undo. The
-approved row already carries `period_year` and `period_no`, and those are the
-only period this uses. `--year`/`--period` exist for a manual run and must be
-given together.
+It takes **no period**. `build` works on months well behind today, so a submit
+that woke on the 1st and worked out "last month" for itself would name a month
+other than the one approved -- and the portal has no undo. The approved row
+already carries `period_year` and `period_no`, and those are the only period this
+uses. `--year`/`--period` exist for a manual run and must be given together.
 
 Before each claim type:
 
 1. Re-derive `lines_digest` from the ledger. If it no longer matches what was
    approved, the approval was for different content: the submission drops back
-   to `awaiting_approval` and nothing is filed.
-2. `in_flight` is written **before** the click, so a process that dies mid-click
+   to `awaiting_approval`, an alert goes out and nothing is filed.
+2. Read *Mijn declaraties*. If every day is already filed, record that and do not
+   click. The draft must hold exactly the approved days, and no other draft of
+   that type may be open. Otherwise nothing is clicked, the approval stands, and
+   an alert goes out.
+3. `in_flight` is written **before** the click, so a process that dies mid-click
    cannot be read as "never submitted" and retried.
-3. Under `DRY_RUN` the state returns to `approved`, so the same run repeats
-   harmlessly tomorrow.
+4. Read the list again. The submission becomes `submitted` only when AFAS shows
+   every day with the manager. Anything else is `needs_reconciliation` with an
+   alert.
+
+A submission left in `in_flight` or `needs_reconciliation` is settled on the next
+run by reading AFAS, never by clicking again. Under `DRY_RUN` there is no draft
+behind the approval, so no browser opens: the state returns to `drafted` and a
+Slack note says nothing was filed.
 
 Without this job the approval click updates Postgres and stops there: the last
 step into AFAS stays manual, which is the thing the pipeline exists to remove.
+
+### Alerts
+
+`alerts.alert()` posts straight to the Slack channel and never raises. It does not
+touch the database, because a database that is down is one of the things it has to
+report. The scheduled commands all go through the same wrapper in `cli.main()`:
+
+- a crash, with the exception type and message;
+- `SIGTERM`, which is how a deadline or a node drain arrives, with no exception to
+  catch;
+- a run skipped because another job held the browser lock;
+- a calendar it could not read, a week with no rows, and a due month with nothing
+  in the ledger;
+- a claim AFAS will not confirm, a draft that does not match the approval, and
+  days that arrive after a claim was sent.
+
+A condition that stays true until a human acts is said once, through the same
+replay table Slack interactions use. Missing configuration still exits 2 without
+an alert, because the job has no channel to post to yet.
 
 ## The classification rules
 

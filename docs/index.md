@@ -30,7 +30,7 @@ One image, five commands, five workloads:
 |---|---|---|
 | `classify` | CronJob | nightly 23:30 |
 | `digest` | CronJob | Fridays 16:00 |
-| `build` | CronJob | 28th of the month 06:00 |
+| `build` | CronJob | daily 06:00, acts when a month is due |
 | `submit` | CronJob | daily 07:00 |
 | `slackd` | Deployment (1 replica) | always on |
 | `override` | manual | on demand |

@@ -11,6 +11,7 @@ OCI Vault via External Secrets Operator; the rest come from a ConfigMap.
 | `INSITE_HOST` | yes | - | AFAS InSite hostname, no scheme. |
 | `COMMUTE_PAGE_PATH` | yes | - | Page slug for the commute (woon-werk) form. Employer-chosen publication name. |
 | `HOME_PAGE_PATH` | yes | - | Page slug for the working-from-home (thuiswerk) form. |
+| `CLAIMS_PAGE_PATH` | for build, submit | - | Page slug for *Mijn declaraties*, read to see what AFAS holds. |
 | `OP_SERVICE_ACCOUNT_TOKEN` | yes | - | 1Password service-account token (`ops_<PLACEHOLDER>`). Read by `op` itself. |
 | `OP_ITEM_NAME` | no | `Microsoft` | 1Password item holding the Microsoft credentials. |
 | `OP_VAULT` | no | `Private` | 1Password vault name. |
@@ -55,7 +56,7 @@ playwright install chromium
 
 export DATABASE_URL=postgresql://<PLACEHOLDER>
 export INSITE_HOST=<PLACEHOLDER>
-export COMMUTE_PAGE_PATH=<PLACEHOLDER> HOME_PAGE_PATH=<PLACEHOLDER>
+export COMMUTE_PAGE_PATH=<PLACEHOLDER> HOME_PAGE_PATH=<PLACEHOLDER> CLAIMS_PAGE_PATH=<PLACEHOLDER>
 export OP_ITEM_NAME=<PLACEHOLDER> OP_VAULT=<PLACEHOLDER>
 export OP_SERVICE_ACCOUNT_TOKEN=ops_<PLACEHOLDER>
 export DRY_RUN=true LOG_LEVEL=DEBUG
@@ -227,7 +228,7 @@ helm template afas-declaraties charts/afas-declaraties \
 |---|---|---|---|
 | `classify` | CronJob | nightly 23:30 | browser |
 | `digest` | CronJob | Fridays 16:00 | |
-| `build` | CronJob | 28th of the month 06:00 | browser, respects `DRY_RUN` |
+| `build` | CronJob | daily 06:00 | browser only when a month has work, respects `DRY_RUN` |
 | `submit` | CronJob | daily 07:00 | browser, respects `DRY_RUN`; no-op unless a period is approved |
 | `slackd` | Deployment | always on | exactly 1 replica |
 

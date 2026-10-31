@@ -79,10 +79,15 @@ Posts the week to Slack: what was classified, what is still unresolved, and a
 button to open a day-correction modal. Corrections land in the ledger as human
 overrides, which subsequent nightly runs will not overwrite.
 
-### 3. Build (monthly)
+### 3. Build (daily, once a month is due)
 
-Takes the claimable days for the period and enters them on the InSite
-verzameldeclaratie form, one row per day. Each row sets the booking date, the
+Runs every morning and opens no browser unless a month has work to do, so a crash
+costs a day rather than a month. A month falls due on the 28th of the month after
+it. Build reads *Mijn declaraties* first, because AFAS outranks the ledger: a day
+already filed, by hand or by an earlier run, is recorded as filed and not offered
+again.
+
+What is left goes on the InSite verzameldeclaratie form, one row per day. Each row sets the booking date, the
 period and the quantity, then **reads the form back and verifies it** before the
 row is committed. `Aanmaken` produces a draft task that the employee can still
 amend or delete.
@@ -95,11 +100,22 @@ days changed after the card was posted, the fingerprint moves and the approval i
 refused rather than applied to different content. Approvals are also deduplicated
 in Postgres, because Socket Mode redelivers on reconnect.
 
-> **Not yet implemented:** the final *Declaratie insturen* click. The path
-> through the task list has been identified but not verified end to end against
-> the live portal, and it is the one irreversible step in the system, so
-> `cli submit` raises rather than shipping on the strength of a plausible guess.
-> Until then the last step is done by hand on the draft task.
+### 5. Submit
+
+Runs every morning and files what a human approved. It reads AFAS before the
+*Declaratie insturen* click and again after it, and a claim counts as filed only
+when *Mijn declaraties* shows its lines with the manager. That click has never
+run against the live portal.
+
+### When something goes wrong
+
+A failed or skipped run posts to the Slack channel directly, without touching the
+database, because the database being down is one of the things it has to report.
+That covers a crash, a job killed at its deadline, a run skipped on the browser
+lock, a calendar it could not read, a month with nothing in the ledger, and a
+claim AFAS will not confirm. A claim the app cannot account for is
+`needs_reconciliation`, and the next run reads AFAS to find out what happened. It
+never clicks again to find out.
 
 ## Configuration
 
@@ -112,6 +128,7 @@ from OCI Vault via External Secrets Operator, and the rest from a ConfigMap.
 | `INSITE_HOST` | Yes | - | AFAS InSite hostname, no scheme, e.g. `<PLACEHOLDER>` |
 | `COMMUTE_PAGE_PATH` | Yes | - | Page slug for the commute (woon-werk) form, e.g. `<PLACEHOLDER>` |
 | `HOME_PAGE_PATH` | Yes | - | Page slug for the working-from-home (thuiswerk) form, e.g. `<PLACEHOLDER>` |
+| `CLAIMS_PAGE_PATH` | For build, submit | - | Page slug for *Mijn declaraties*, read to see what AFAS holds, e.g. `<PLACEHOLDER>` |
 | `OP_SERVICE_ACCOUNT_TOKEN` | Yes | - | 1Password service-account token (`ops_<PLACEHOLDER>`). Read by the `op` CLI itself, never by this code |
 | `OP_ITEM_NAME` | No | `Microsoft` | 1Password item holding the Microsoft credentials. Must expose `username`, `password` and a configured TOTP |
 | `OP_VAULT` | No | `Private` | 1Password vault name |
@@ -154,7 +171,7 @@ Workloads, all in `Europe/Amsterdam`:
 |---|---|---|
 | `classify` | CronJob | nightly 23:30 |
 | `digest` | CronJob | Fridays 16:00 |
-| `build` | CronJob | 28th of the month 06:00 |
+| `build` | CronJob | daily 06:00, acts when a month is due |
 | `submit` | CronJob | daily 07:00 |
 | `slackd` | Deployment | always on |
 

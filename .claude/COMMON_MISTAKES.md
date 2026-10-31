@@ -488,3 +488,78 @@ Related: `token()` will **not** start a device-code flow unless asked to. A
 device code blocks until a human types it into a browser, and a CronJob has no
 human; failing immediately with the login command in the message beats a job
 that hangs until its `activeDeadlineSeconds`.
+
+## Live approval could never have worked, and dry run hid it
+
+**Symptom.** Under `DRY_RUN=false`, every Approve is refused because the digest
+changed, and nothing is ever filed. Under `DRY_RUN=true` everything looks fine.
+
+**Cause.** `build` marked the days `drafted`, and `claimable_days` left `drafted`
+out. The digest re-derived at approval and at submit therefore covered no days,
+and never matched the one on the card. Dry run does not mark the days, so the
+path that gets exercised was the one path this bug could not reach.
+
+**Fix.** `claimable_days` includes `drafted`. The test that catches it is
+`tests/test_lifecycle_pg.py`, which walks build, approve and submit against a real
+Postgres. The fakes in `test_submit_selection.py` could not: they answer whatever
+the test told them to.
+
+## `drafted` on a submission means rehearsed, not that a draft exists
+
+A dry run enters and verifies the rows, leaves them unsaved, and records the
+submission as `drafted`. AFAS holds nothing. A live run has to do the work for
+real, which is why `_plan_build` skips a `drafted` row only under `DRY_RUN`.
+Reading that state as "the draft is there" is how a month goes unfiled the day
+`DRY_RUN` is flipped.
+
+## A monthly CronJob's failure alert takes 62 days to fire
+
+`KubeCronJobNotSucceeding` fires when a CronJob has had no success within twice
+its schedule interval, and a day-of-month schedule counts as 31 days.
+`KubeJobFailed` excludes jobs a CronJob owns. So a job on `0 6 28 * *` can fail two
+months running and nobody hears about it.
+
+`build` therefore runs daily and opens no browser unless a month has work, which
+brings the cluster alert down to two days and gives a failed month a next attempt.
+The app's own Slack alert covers the rest. Do not move it back to a monthly
+schedule, and do not add a retry to shorten the gap: a retried SSO login is how an
+account gets locked out.
+
+## AFAS holds claims the ledger never saw
+
+Claims can be filed by hand, before the ledger began or alongside it. The first
+approval card ever posted offered two days that were already approved in AFAS, and
+approving it live would have claimed them twice.
+
+Read *Mijn declaraties* before writing anything and treat what it says as the
+truth. That is `readback.position()`. A click that did not raise is not evidence
+either: `submitted` is only written once the list shows the lines with the
+manager.
+
+Same reasoning for backfills: a desk booking is not proof of presence when
+bookings are made automatically, so old days are for a human to decide. Never file
+them from the calendar alone.
+
+## The period menu does not list every period
+
+**Symptom.** `build` crashes about 70 seconds in with `PortalChanged: could not
+select PeId=9 via #Window_1_Declaratie_HrZ50_PeId_typeahead-base`. One month the
+commute form passes and the thuiswerk form fails for the same period, and the next
+month the commute form fails too. Nobody changed anything, and it looks like the
+portal moved.
+
+**Cause.** The menu shows the employee's recent picks plus the first rows of the
+lookup, six in all. A period already picked by hand on that form is in the DOM. Any
+other period past March is not, so `afas-menu-item[value='9']` waits for something
+that will never appear.
+
+**Fix.** `set_reference` checks whether the item exists and otherwise types the
+value. Opening the menu focuses its search box, and the search matches the period
+number, so this holds in any interface language.
+
+## The woon-werk and thuiswerk forms disagree about what one looks like
+
+The woon-werk form holds `1,00` in a disabled field. The thuiswerk form holds `1`.
+Comparing them as strings raises on a correct row, so `verify_row` and
+`set_or_verify_quantity` compare numbers through `same_quantity`. A quantity that
+already holds the right count is left alone.
