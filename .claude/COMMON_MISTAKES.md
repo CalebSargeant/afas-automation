@@ -291,6 +291,14 @@ permissions matched the siblings. Pinning to v1.0.24 — the version
 fortivpn-gateway runs — starts normally. Do not "upgrade" this pin without
 checking a run actually starts.
 
+Dependabot moved it anyway, to v1.15.0, where `docker-bake-ghcr.yaml` no longer
+exists. A run like that has zero jobs and no log, and `gh pr checks` does not list
+it, so the PR looks green. No image built for seven weeks and nothing noticed,
+because no release was cut in that time. The next one would have had no image.
+`dependabot.yml` now ignores that repo. Moving up means porting to the workflows
+that replaced it, with a run to prove it. Check `gh run list --workflow "Build
+Container Image"` before merging, not only the PR's checks.
+
 ## A Chromium selftest in the Dockerfile breaks the cross-built leg
 
 The image build launches Chromium once to prove the browser works, so a broken
