@@ -28,6 +28,8 @@ explicit human approval.
 from __future__ import annotations
 
 import logging
+import operator
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date
 
@@ -164,7 +166,23 @@ def confirm_row(page: Page, window: int, *, timeout_ms: int = 20_000) -> None:
     logger.debug("insite: row Window_%d committed", window)
 
 
-def set_text_field(page: Page, window: int, code: str, value: str, *, attempts: int = 3) -> None:
+def same_quantity(a: str | None, b: str | None) -> bool:
+    """One form shows the count as ``1,00`` and another as ``1``. Same count."""
+    try:
+        return float((a or "").replace(",", ".")) == float((b or "").replace(",", "."))
+    except ValueError:
+        return False
+
+
+def set_text_field(
+    page: Page,
+    window: int,
+    code: str,
+    value: str,
+    *,
+    attempts: int = 3,
+    same: Callable[[str, str], bool] = operator.eq,
+) -> None:
     """Set a date/number field and confirm the value stuck.
 
     InSite performs async server round-trips that silently discard a value
@@ -180,7 +198,7 @@ def set_text_field(page: Page, window: int, code: str, value: str, *, attempts: 
         except Exception as exc:  # noqa: BLE001
             raise PortalChanged(f"field {code} not fillable at {selector}") from exc
         page.wait_for_timeout(1_500)
-        if page.locator(selector).first.input_value() == value:
+        if same(page.locator(selector).first.input_value(), value):
             return
         logger.warning("insite: %s did not retain %r (attempt %d)", code, value, attempt + 1)
     raise InSiteError(f"{code} would not hold the value {value!r} after {attempts} attempts")
@@ -191,14 +209,21 @@ def set_reference(page: Page, window: int, code: str, value: str, *, attempts: i
 
     The inner combobox cannot be clicked -- an overlay span legitimately
     intercepts pointer events -- so the host component is the click target and
-    the choice is made from the menu rather than typed.
+    the choice is made from the menu.
+
+    The menu shows recent picks and the first few rows, not every value. Opening
+    it focuses its search box, so a value it does not show is typed there.
     """
     host = f"#Window_{window}_{TABLE}_{code}_typeahead-base"
+    item = page.locator(f"afas-menu-item[value='{value}']")
     for attempt in range(attempts):
         try:
             page.locator(host).first.click(timeout=10_000)
             page.wait_for_timeout(1_500)
-            page.locator(f"afas-menu-item[value='{value}']").first.click(timeout=10_000)
+            if not item.count():
+                page.keyboard.type(value)
+                page.wait_for_timeout(1_500)
+            item.first.click(timeout=10_000)
         except Exception as exc:  # noqa: BLE001
             if attempt == attempts - 1:
                 raise PortalChanged(f"could not select {code}={value} via {host}") from exc
@@ -226,17 +251,16 @@ def set_or_verify_quantity(page: Page, window: int, expected: str) -> None:
     except Exception as exc:  # noqa: BLE001
         raise PortalChanged(f"quantity field missing at {selector}") from exc
 
-    if not disabled:
-        set_text_field(page, window, "Qu", expected)
-        return
-
     actual = field.input_value()
-    if actual != expected:
+    if same_quantity(actual, expected):
+        logger.debug("insite: quantity is already %s", actual)
+        return
+    if disabled:
         raise InSiteError(
             f"AFAS fixed the quantity at {actual!r} but {expected!r} was intended. "
             "Filing this would claim a different amount than the ledger recorded."
         )
-    logger.debug("insite: quantity is AFAS-controlled at %s", actual)
+    set_text_field(page, window, "Qu", expected, same=same_quantity)
 
 
 def fill_row(page: Page, window: int, line: ClaimLine) -> dict[str, str | None]:
@@ -278,7 +302,7 @@ def verify_row(row: dict[str, str | None], line: ClaimLine) -> None:
         raise InSiteError(f"year mismatch: form has {actual_year!r}, expected {line.day.year}")
 
     actual_qty = row.get("Aantal")
-    if actual_qty != line.quantity:
+    if not same_quantity(actual_qty, line.quantity):
         raise InSiteError(f"quantity mismatch: form has {actual_qty!r}, expected {line.quantity!r}")
 
 
@@ -422,9 +446,9 @@ def submit_declaration(page: Page, *, dry_run: bool = True) -> bool:
     There is deliberately no line-count assertion here: the task page shows
     workflow metadata and the action links, not the claim lines, so any such
     check would either always fail or be checking a coincidence. Content is
-    verified instead where the content actually is -- the approval digest is
-    re-derived from the ledger before this is called, and the task is selected
-    by matching its form slug.
+    verified where the content actually is: the caller compares the claim list
+    in :mod:`readback` before and after this. True means the click happened, and
+    only that list says whether it landed.
     """
     action = find_workflow_action(page, ACTION_SUBMIT)
 
