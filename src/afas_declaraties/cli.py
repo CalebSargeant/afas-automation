@@ -150,14 +150,18 @@ def cmd_classify(cfg: Config, args) -> int:
                 # Better to record nothing than to record "no bookings".
                 alert(
                     cfg,
-                    f"agenda niet leesbaar voor {start:%d-%m}..{end:%d-%m}, "
-                    "die dagen staan op onbeslist.",
+                    f"agenda niet leesbaar voor {start:%d-%m}..{end:%d-%m}. Besliste dagen "
+                    "blijven staan, nieuwe dagen staan op onbeslist.",
                 )
 
             day = start
             counts: dict[str, int] = {}
             while day <= end:
                 prior = existing.get(day)
+                # A failed read says nothing about a day a good read already decided.
+                if degraded and prior:
+                    day += timedelta(days=1)
+                    continue
                 # Only an office verdict matters here: it is the one whose
                 # disappearance from the calendar needs a human to adjudicate.
                 previous_verdict = (
