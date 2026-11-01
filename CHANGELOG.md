@@ -2,6 +2,49 @@
 
 <!-- version list -->
 
+## v1.3.0 (2026-11-01)
+
+### Bug Fixes
+
+- Close the gaps a review found in the claim path
+  ([#21](https://github.com/CalebSargeant/afas-automation/pull/21),
+  [`5c8f8b4`](https://github.com/CalebSargeant/afas-automation/commit/5c8f8b4321b8bc9c2bda3b9418d03708d557da08))
+
+- Make build dependable and prove claims against AFAS
+  ([#21](https://github.com/CalebSargeant/afas-automation/pull/21),
+  [`5c8f8b4`](https://github.com/CalebSargeant/afas-automation/commit/5c8f8b4321b8bc9c2bda3b9418d03708d557da08))
+
+- **ci**: Pin the image workflow back to a version that still has the file
+  ([#21](https://github.com/CalebSargeant/afas-automation/pull/21),
+  [`5c8f8b4`](https://github.com/CalebSargeant/afas-automation/commit/5c8f8b4321b8bc9c2bda3b9418d03708d557da08))
+
+- **insite**: Find periods the menu does not show, compare counts as numbers
+  ([#21](https://github.com/CalebSargeant/afas-automation/pull/21),
+  [`5c8f8b4`](https://github.com/CalebSargeant/afas-automation/commit/5c8f8b4321b8bc9c2bda3b9418d03708d557da08))
+
+### Chores
+
+- **deps**: Bump the actions-version group across 1 directory with 2 updates
+  ([#3](https://github.com/CalebSargeant/afas-automation/pull/3),
+  [`5813a14`](https://github.com/CalebSargeant/afas-automation/commit/5813a14cae996fa228e66767a6ac7fe01b496ff7))
+
+### Documentation
+
+- Describe AFAS read-back, the daily build and alerts
+  ([#21](https://github.com/CalebSargeant/afas-automation/pull/21),
+  [`5c8f8b4`](https://github.com/CalebSargeant/afas-automation/commit/5c8f8b4321b8bc9c2bda3b9418d03708d557da08))
+
+- List read-back, alerts and submit in the module and workload tables
+  ([#21](https://github.com/CalebSargeant/afas-automation/pull/21),
+  [`5c8f8b4`](https://github.com/CalebSargeant/afas-automation/commit/5c8f8b4321b8bc9c2bda3b9418d03708d557da08))
+
+### Features
+
+- **build**: Read AFAS before and after every write, and alert on failure
+  ([#21](https://github.com/CalebSargeant/afas-automation/pull/21),
+  [`5c8f8b4`](https://github.com/CalebSargeant/afas-automation/commit/5c8f8b4321b8bc9c2bda3b9418d03708d557da08))
+
+
 ## v1.2.0 (2026-09-07)
 
 ### Bug Fixes
