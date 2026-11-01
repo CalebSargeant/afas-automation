@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v1.3.2 (2026-11-01)
+
+### Bug Fixes
+
+- **calendar**: Reload once when the week header is missing
+  ([#24](https://github.com/CalebSargeant/afas-automation/pull/24),
+  [`118f3c1`](https://github.com/CalebSargeant/afas-automation/commit/118f3c13a8124131e0948cbbcdb87ee03ad22eb1))
+
+
 ## v1.3.1 (2026-11-01)
 
 ### Bug Fixes
