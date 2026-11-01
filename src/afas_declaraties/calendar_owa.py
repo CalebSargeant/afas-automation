@@ -228,11 +228,22 @@ def read_week(page, monday: date, *, settle_ms: int = 12_000, max_steps: int = 1
         _settle(page, settle_ms=settle_ms)
 
     target_end = monday + timedelta(days=4)
+    reloaded = False
     for _ in range(max_steps + 1):
         current = rendered_week(page)
         if current is None:
-            logger.error("owa: cannot read the date-range header; refusing to guess the week")
-            return [], True
+            header = [x for x in page.evaluate(_HARVEST_JS) if _HEADER_HINT.search(x)]
+            if reloaded:
+                logger.error(
+                    "owa: cannot read the date-range header %s; refusing to guess the week", header
+                )
+                return [], True
+            # The grid can render while the header does not, and a fresh load brings it back.
+            logger.warning("owa: cannot read the date-range header %s; reloading once", header)
+            page.reload(wait_until="domcontentloaded", timeout=90_000)
+            _settle(page, settle_ms=settle_ms)
+            reloaded = True
+            continue
         if current[0] <= monday and target_end <= current[1] + timedelta(days=2):
             break
         direction = "Previous week" if monday < current[0] else "Next week"
@@ -268,7 +279,7 @@ def read_week(page, monday: date, *, settle_ms: int = 12_000, max_steps: int = 1
     logger.info(
         "owa: week %s (rendered %s..%s) -> %d events (%d labels, %d unparsed)",
         monday,
-        *rendered_week(page),
+        *current,
         len(in_week),
         len(labels),
         failures,
