@@ -7,7 +7,7 @@ days as working-from-home.
 
 from datetime import date
 
-from afas_declaraties.calendar_owa import looks_like_event, rendered_week
+from afas_declaraties.calendar_owa import looks_like_event, read_week, rendered_week
 
 
 class FakePage:
@@ -67,3 +67,54 @@ def test_looks_like_event_distinguishes_events_from_chrome():
     assert looks_like_event(EVENT)
     for chrome in (NAV_PREV, NAV_NEXT, HEADER, "Go to today"):
         assert not looks_like_event(chrome), chrome
+
+
+class CalendarPage(FakePage):
+    """What read_week drives: the labels change when the page reloads."""
+
+    def __init__(self, labels, after_reload=None):
+        super().__init__(labels)
+        self._after_reload = after_reload
+        self.reloads = 0
+
+    def goto(self, *_args, **_kwargs):
+        pass
+
+    def reload(self, *_args, **_kwargs):
+        self.reloads += 1
+        self._labels = self._after_reload
+
+
+MONDAY = date(2026, 8, 31)
+
+
+def test_events_without_a_header_get_one_reload():
+    """The live failure: the grid rendered, the header did not, and one week
+    marked a whole window degraded while the next week in the run read fine."""
+    page = CalendarPage([EVENT], after_reload=[HEADER, EVENT])
+    events, degraded = read_week(page, MONDAY)
+    assert page.reloads == 1
+    assert not degraded
+    assert MONDAY in {e.day for e in events}
+
+
+def test_a_header_still_missing_after_the_reload_is_degraded():
+    page = CalendarPage([EVENT], after_reload=[EVENT])
+    assert read_week(page, MONDAY) == ([], True)
+    assert page.reloads == 1, "one reload, not a loop"
+
+
+def test_losing_the_header_once_the_week_is_verified_does_not_crash():
+    """The closing log line read the header again and unpacked the answer."""
+
+    class HeaderLeaves(CalendarPage):
+        reads = 0
+
+        def evaluate(self, js):
+            self.reads += 1
+            # Two reads settle the first load, the third verifies the week.
+            return super().evaluate(js) if self.reads <= 3 else [EVENT]
+
+    events, degraded = read_week(HeaderLeaves([HEADER, EVENT]), MONDAY)
+    assert not degraded
+    assert [e.day for e in events] == [MONDAY]

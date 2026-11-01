@@ -609,3 +609,18 @@ human answered.
 **Fix.** `cmd_classify` skips a day that already has a row when the read is
 degraded. A new day still becomes a question, and the next nine nights can settle
 it. A read that failed is not evidence, so a day that was decided stays decided.
+
+## The calendar can show events with no date-range header
+
+**Symptom.** `owa: cannot read the date-range header` on one week, the next week in
+the same run reads fine, and the alert says the whole window is unreadable.
+
+**Cause.** Not known. The grid rendered, since there is no "no events after first
+load" line, and the header stayed absent through its retry. `read_week` then gave up
+on the week, and one degraded week marks the whole run degraded.
+
+**Fix.** `read_week` reloads once, then navigates from whatever week comes back, so
+this also covers losing the header after a click. The log prints any header label it
+did find, which is chrome and holds no calendar data, so the next failure says what
+was on the page. The closing log line reuses the verified week: reading the header
+again there raised `TypeError` when it had gone.
