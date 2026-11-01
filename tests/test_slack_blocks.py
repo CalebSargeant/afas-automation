@@ -7,6 +7,7 @@ import pytest
 from afas_declaraties.models import ClaimType
 from afas_declaraties.slack_blocks import (
     APPROVE,
+    CORRECT,
     SEP,
     approval_card,
     corrections_modal,
@@ -62,6 +63,42 @@ def test_dropped_days_are_named_on_the_approval_card():
     assert "Niet meegenomen" in text
 
 
+def test_the_card_names_days_left_out_after_reading_afas():
+    """Approving "2 days" means little if the reader cannot see what was skipped."""
+    blocks = approval_card(
+        year=2026,
+        period=8,
+        claim_type=ClaimType.HOME,
+        days=DAYS,
+        digest="d",
+        unresolved=[],
+        dry_run=False,
+        already=[date(2026, 8, 3)],
+        unrecorded=[date(2026, 8, 4)],
+        open_drafts=[date(2026, 6, 2)],
+    )
+    text = " ".join(str(b) for b in blocks)
+    assert "Al in AFAS* (1): 03-08" in text
+    assert "Nooit geclassificeerd* (1): 04-08" in text
+    assert "Open concept in AFAS* (1): 02-06" in text
+
+
+def test_a_clean_card_has_no_warning_sections():
+    blocks = approval_card(
+        year=2026,
+        period=8,
+        claim_type=ClaimType.HOME,
+        days=DAYS,
+        digest="d",
+        unresolved=[],
+        dry_run=False,
+    )
+    text = " ".join(str(b) for b in blocks)
+    assert "Al in AFAS" not in text
+    assert "Nooit geclassificeerd" not in text
+    assert "Open concept" not in text
+
+
 def test_dry_run_is_stated_on_the_card():
     blocks = approval_card(
         year=2026,
@@ -73,6 +110,21 @@ def test_dry_run_is_stated_on_the_card():
         dry_run=True,
     )
     assert "DRY RUN" in " ".join(str(b) for b in blocks)
+
+
+def test_a_dry_card_cannot_be_approved_or_rejected():
+    """A decision on a rehearsal must not outlive the flip to live."""
+    blocks = approval_card(
+        year=2026,
+        period=8,
+        claim_type=ClaimType.HOME,
+        days=DAYS,
+        digest="d",
+        unresolved=[],
+        dry_run=True,
+    )
+    actions = next(b for b in blocks if b["type"] == "actions")
+    assert [e["action_id"] for e in actions["elements"]] == [CORRECT]
 
 
 def test_corrections_modal_block_ids_parse_back_to_dates():

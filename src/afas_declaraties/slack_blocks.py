@@ -49,6 +49,9 @@ def approval_card(
     digest: str,
     unresolved: list[date],
     dry_run: bool,
+    already: list[date] | None = None,
+    unrecorded: list[date] | None = None,
+    open_drafts: list[date] | None = None,
 ) -> list[dict]:
     """The monthly ask. Everything that will be filed is shown before approval."""
     label = "woon-werk" if claim_type is ClaimType.COMMUTE else "thuiswerkdagen"
@@ -84,6 +87,23 @@ def approval_card(
             }
         )
 
+    for icon, title, listed, note in (
+        (":warning:", "Nooit geclassificeerd", unrecorded, "Worden niet gedeclareerd."),
+        (":white_check_mark:", "Al in AFAS", already, "Niet nog een keer op deze declaratie."),
+        (":warning:", "Open concept in AFAS", open_drafts, "Blokkeert insturen van dit type."),
+    ):
+        if listed:
+            names = ", ".join(d.strftime("%d-%m") for d in listed)
+            blocks.append(
+                {
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": f"{icon} *{title}* ({len(listed)}): {names}\n_{note}_",
+                    },
+                }
+            )
+
     blocks.append(
         {
             "type": "context",
@@ -97,6 +117,18 @@ def approval_card(
     )
 
     value = decision_value(year, period, claim_type, digest)
+    correct = {
+        "type": "button",
+        "action_id": CORRECT,
+        "text": {"type": "plain_text", "text": "Dagen corrigeren"},
+        "value": value,
+    }
+    # A rehearsal holds nothing to decide on, and a decision on one must not outlive
+    # the flip to live.
+    if dry_run:
+        blocks.append({"type": "actions", "block_id": "period_decision", "elements": [correct]})
+        return blocks
+
     blocks.append(
         {
             "type": "actions",
@@ -126,12 +158,7 @@ def approval_card(
                     "text": {"type": "plain_text", "text": "Afwijzen"},
                     "value": value,
                 },
-                {
-                    "type": "button",
-                    "action_id": CORRECT,
-                    "text": {"type": "plain_text", "text": "Dagen corrigeren"},
-                    "value": value,
-                },
+                correct,
             ],
         }
     )

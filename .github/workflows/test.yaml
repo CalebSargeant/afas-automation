@@ -27,6 +27,20 @@ jobs:
   python:
     name: ruff + pytest
     runs-on: ubuntu-latest
+    # A throwaway database for test_lifecycle_pg. No credentials worth protecting.
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: afas_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -51,6 +65,8 @@ jobs:
         run: ruff format --check src tests
 
       - name: Pytest
+        env:
+          TEST_DATABASE_URL: postgresql://postgres:test@localhost:5432/afas_test
         run: pytest -q
 
   chart:

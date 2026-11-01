@@ -144,7 +144,14 @@ def build_app(cfg: Config) -> App:
             return
         year, period, claim_type, _ = parse_decision_value(raw)
         with store.connect(cfg.database_url) as conn:
-            store.set_submission_state(conn, year, period, claim_type, "rejected")
+            ok = store.reject_submission(conn, year, period, claim_type)
+        if not ok:
+            client.chat_postEphemeral(
+                channel=body["channel"]["id"],
+                user=user,
+                text=":warning: Niet afgewezen: deze declaratie wacht niet meer op een beslissing.",
+            )
+            return
         client.chat_update(
             channel=body["channel"]["id"],
             ts=body["message"]["ts"],

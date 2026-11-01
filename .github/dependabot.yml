@@ -10,6 +10,9 @@ updates:
       interval: weekly
     cooldown:
       default-days: 7
+    # A new tag there can drop the file this repo calls, and then no image builds.
+    ignore:
+      - dependency-name: "calebsargeant/reusable-workflows*"
     groups:
       actions-version:
         applies-to: version-updates

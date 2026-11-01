@@ -17,8 +17,11 @@ from afas_declaraties.insite import (
     AmbiguousAction,
     ClaimLine,
     InSiteError,
+    PortalChanged,
     available_actions,
     find_workflow_action,
+    set_or_verify_quantity,
+    set_reference,
     verify_row,
 )
 
@@ -107,3 +110,144 @@ def test_verify_row_accepts_a_correct_row():
     verify_row(
         {"Datum boeking": "13-08-2026", "Jaar": "2026", "ref:Periode": "8", "Aantal": "1,00"}, line
     )
+
+
+def test_verify_row_reads_1_and_1_00_as_the_same_count():
+    """The woon-werk form holds 1,00 and the thuiswerk form holds 1."""
+    line = ClaimLine(date(2026, 8, 13))
+    verify_row(
+        {"Datum boeking": "13-08-2026", "Jaar": "2026", "ref:Periode": "8", "Aantal": "1"}, line
+    )
+
+
+@pytest.mark.parametrize("wrong", ["2", "0,50", "", None, "een"])
+def test_verify_row_still_refuses_a_different_count(wrong):
+    line = ClaimLine(date(2026, 8, 13))
+    with pytest.raises(InSiteError, match="quantity"):
+        verify_row(
+            {"Datum boeking": "13-08-2026", "Jaar": "2026", "ref:Periode": "8", "Aantal": wrong},
+            line,
+        )
+
+
+class FakeQuantity:
+    def __init__(self, value, disabled):
+        self.value, self.disabled = value, disabled
+        self.filled = []
+
+    @property
+    def first(self):
+        return self
+
+    def is_disabled(self, timeout=None):
+        return self.disabled
+
+    def input_value(self):
+        return self.value
+
+    def fill(self, value):
+        self.filled.append(value)
+        self.value = "1"
+
+    def press(self, key):
+        pass
+
+
+class FakeFormPage:
+    def __init__(self, field):
+        self.field = field
+
+    def locator(self, selector):
+        return self.field
+
+    def wait_for_timeout(self, ms):
+        pass
+
+
+@pytest.mark.parametrize("disabled", [True, False])
+def test_a_quantity_that_already_holds_the_count_is_not_written(disabled):
+    field = FakeQuantity("1", disabled)
+    set_or_verify_quantity(FakeFormPage(field), 1, "1,00")
+    assert field.filled == []
+
+
+def test_a_fixed_quantity_that_differs_refuses():
+    with pytest.raises(InSiteError, match="fixed the quantity"):
+        set_or_verify_quantity(FakeFormPage(FakeQuantity("2,00", True)), 1, "1,00")
+
+
+def test_an_editable_quantity_is_written_and_compared_as_a_number():
+    """Written as 1,00 and read back as 1 must not burn three attempts and crash."""
+    field = FakeQuantity("", False)
+    set_or_verify_quantity(FakeFormPage(field), 1, "1,00")
+    assert field.filled == ["1,00"]
+
+
+class FakeMenuLocator:
+    def __init__(self, page, selector):
+        self.page, self.selector = page, selector
+
+    @property
+    def first(self):
+        return self
+
+    def _value(self):
+        return self.selector.split("value='")[1].rstrip("']")
+
+    def count(self):
+        return int(self._value() in self.page.listed)
+
+    def click(self, timeout=None):
+        if "afas-menu-item" not in self.selector:
+            return
+        if self._value() not in self.page.listed:
+            raise TimeoutError(self.selector)
+        self.page.held = self._value()
+
+    def get_attribute(self, name):
+        return self.page.held
+
+
+class FakeMenuPage:
+    """Recent picks plus the first rows, until the search box is used."""
+
+    def __init__(self, listed, searchable=True):
+        self.listed, self.searchable = set(listed), searchable
+        self.held, self.typed = None, []
+        self.keyboard = self
+
+    def locator(self, selector):
+        return FakeMenuLocator(self, selector)
+
+    def wait_for_timeout(self, ms):
+        pass
+
+    def type(self, text):
+        self.typed.append(text)
+        if self.searchable:
+            self.listed.add(text)
+
+
+MENU = ["8", "6", "7", "1", "2", "3"]
+
+
+def test_a_period_the_menu_does_not_show_is_searched_for():
+    """Why two monthly builds crashed: 9 is simply not in the first six rows."""
+    page = FakeMenuPage(MENU)
+    set_reference(page, 1, "PeId", "9")
+    assert page.typed == ["9"]
+    assert page.held == "9"
+
+
+def test_a_period_the_menu_shows_is_picked_without_searching():
+    page = FakeMenuPage(MENU)
+    set_reference(page, 1, "PeId", "8")
+    assert page.typed == []
+    assert page.held == "8"
+
+
+def test_a_period_search_cannot_find_refuses():
+    page = FakeMenuPage(MENU, searchable=False)
+    with pytest.raises(PortalChanged, match="PeId=9"):
+        set_reference(page, 1, "PeId", "9")
+    assert page.held is None

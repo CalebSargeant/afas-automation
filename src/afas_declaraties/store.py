@@ -225,7 +225,11 @@ def apply_override(
 def claimable_days(
     conn: psycopg.Connection, year: int, period: int, claim_type: ClaimType
 ) -> list[dict]:
-    """Days ready to be filed for a period. Excludes anything unresolved."""
+    """Days on the claim for a period. Excludes anything unresolved.
+
+    `drafted` counts: a live `build` moves its days there, and approval and submit
+    must still see them. Leaving it out voids the digest of every real draft.
+    """
     with conn.cursor() as cur:
         cur.execute(
             """
@@ -233,12 +237,27 @@ def claimable_days(
             FROM claim_day
             WHERE period_year = %s AND period_no = %s
               AND claim_type = %s
-              AND state IN ('planned', 'confirmed')
+              AND state IN ('planned', 'confirmed', 'drafted')
             ORDER BY day
             """,
             (year, period, claim_type.value),
         )
         return cur.fetchall()
+
+
+def open_periods(conn: psycopg.Connection, year: int, period: int) -> list[tuple[int, int]]:
+    """Periods up to the given one that still hold something to file or decide."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT DISTINCT period_year, period_no FROM claim_day
+            WHERE (period_year, period_no) <= (%s, %s)
+              AND state IN ('planned', 'confirmed', 'drafted', 'needs_input')
+            ORDER BY period_year, period_no
+            """,
+            (year, period),
+        )
+        return [(r["period_year"], r["period_no"]) for r in cur.fetchall()]
 
 
 def unresolved_days(conn: psycopg.Connection, year: int, period: int) -> list[dict]:
@@ -282,6 +301,12 @@ def claim_slack_interaction(
     return fresh
 
 
+def interaction_seen(conn: psycopg.Connection, dedupe_key: str) -> bool:
+    with conn.cursor() as cur:
+        cur.execute("SELECT 1 FROM slack_interaction WHERE dedupe_key = %s", (dedupe_key,))
+        return cur.fetchone() is not None
+
+
 def upsert_submission(
     conn: psycopg.Connection,
     year: int,
@@ -290,24 +315,27 @@ def upsert_submission(
     digest: str,
     line_count: int,
     state: str,
+    *,
+    error: str | None = None,
 ) -> None:
     """Record (or refresh) the declaration we intend to file for a period."""
     with conn.cursor() as cur:
         cur.execute(
             """
             INSERT INTO submission (period_year, period_no, claim_type,
-                                    lines_digest, line_count, state)
-            VALUES (%s, %s, %s, %s, %s, %s)
+                                    lines_digest, line_count, state, last_error)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (period_year, period_no, claim_type) DO UPDATE SET
                 lines_digest = EXCLUDED.lines_digest,
                 line_count   = EXCLUDED.line_count,
                 state        = EXCLUDED.state,
+                last_error   = EXCLUDED.last_error,
                 updated_at   = now()
             -- A filed declaration is history. Never rewrite it, even if the
             -- classifier later changes its mind about one of the days.
             WHERE submission.state NOT IN ('submitted', 'in_flight')
             """,
-            (year, period, claim_type.value, digest, line_count, state),
+            (year, period, claim_type.value, digest, line_count, state, error),
         )
     conn.commit()
 
@@ -327,16 +355,26 @@ def get_submission(
 def approved_submissions(conn: psycopg.Connection) -> list[dict]:
     """Every period a human has approved and that has not been filed yet.
 
-    Selected by state, never by date. `build` runs on the 28th and defaults to
-    the *previous* month, so a submit that woke on the 1st and worked out
-    "previous month" for itself would name the month after the one that was
-    approved, and file the wrong period into a portal with no undo. The
-    approval already names its period; this reads it back.
+    Selected by state, never by date. `build` works on periods well behind today,
+    so a submit that worked out "previous month" for itself would name a different
+    month from the one that was approved, and file the wrong period into a portal
+    with no undo. The approval already names its period; this reads it back.
     """
     with conn.cursor() as cur:
         cur.execute(
             """SELECT * FROM submission
                WHERE state = 'approved'
+               ORDER BY period_year, period_no, claim_type"""
+        )
+        return cur.fetchall()
+
+
+def unsettled_submissions(conn: psycopg.Connection) -> list[dict]:
+    """Declarations whose click may have landed. Only AFAS can say."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """SELECT * FROM submission
+               WHERE state IN ('in_flight', 'needs_reconciliation')
                ORDER BY period_year, period_no, claim_type"""
         )
         return cur.fetchall()
@@ -356,6 +394,9 @@ def approve_submission(
     the one carried by the button. If days were added or removed since the card
     was posted, the approval is for different content and is refused -- an
     approval must never be replayable against a changed claim.
+
+    `drafted` is left out on purpose. It means a dry run rehearsed the form, and a
+    click on that card must not count once `DRY_RUN` is flipped.
     """
     current = claimable_days(conn, year, period, claim_type)
     live_digest = lines_digest([r["day"] for r in current], claim_type)
@@ -370,15 +411,37 @@ def approve_submission(
             """UPDATE submission SET state='approved', approved_by=%s, approved_at=now(),
                                      updated_at=now()
                WHERE period_year=%s AND period_no=%s AND claim_type=%s
-                 AND state IN ('drafted','awaiting_approval','rejected')
+                 AND state IN ('awaiting_approval','rejected')
                RETURNING id""",
             (actor, year, period, claim_type.value),
         )
         ok = cur.fetchone() is not None
     conn.commit()
     if not ok:
-        return False, "this period is not awaiting approval (already submitted, or in flight)"
+        return False, "this period is not awaiting approval (a dry run, already sent, or in flight)"
     return True, f"approved {len(current)} day(s)"
+
+
+def reject_submission(
+    conn: psycopg.Connection, year: int, period: int, claim_type: ClaimType
+) -> bool:
+    """False if it is no longer waiting on a human.
+
+    An older card keeps its buttons after a newer one replaced it. A click on it
+    must not rewrite a declaration that has gone in, or hide one still in flight
+    from the run that has to settle it.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """UPDATE submission SET state='rejected', last_error=NULL, updated_at=now()
+               WHERE period_year=%s AND period_no=%s AND claim_type=%s
+                 AND state IN ('awaiting_approval','approved')
+               RETURNING id""",
+            (year, period, claim_type.value),
+        )
+        ok = cur.fetchone() is not None
+    conn.commit()
+    return ok
 
 
 def set_submission_state(
@@ -390,13 +453,15 @@ def set_submission_state(
     *,
     error: str | None = None,
     insite_ref: str | None = None,
+    digest: str | None = None,
 ) -> None:
     with conn.cursor() as cur:
         cur.execute(
             """UPDATE submission SET state=%s, last_error=%s,
-                      insite_ref=COALESCE(%s, insite_ref), updated_at=now()
+                      insite_ref=COALESCE(%s, insite_ref),
+                      lines_digest=COALESCE(%s, lines_digest), updated_at=now()
                WHERE period_year=%s AND period_no=%s AND claim_type=%s""",
-            (state, error, insite_ref, year, period, claim_type.value),
+            (state, error, insite_ref, digest, year, period, claim_type.value),
         )
     conn.commit()
 

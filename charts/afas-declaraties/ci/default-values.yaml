@@ -14,6 +14,7 @@ externalSecret:
     INSITE_HOST: {key: example-afas-insite-host}
     COMMUTE_PAGE_PATH: {key: example-afas-commute-page-path}
     HOME_PAGE_PATH: {key: example-afas-home-page-path}
+    CLAIMS_PAGE_PATH: {key: example-afas-claims-page-path}
     # Only required while config.calendarSource is "mcp", which this file
     # sets so the guard's happy path is rendered at least once.
     M365_TOKEN_JSON: {key: example-afas-m365-token-json}

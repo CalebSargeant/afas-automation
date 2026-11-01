@@ -62,6 +62,8 @@ class Config:
     #: the employer and differ per environment.
     commute_page: str = ""
     home_page: str = ""
+    #: The employee's list of declaration lines, read to see what AFAS holds.
+    claims_page: str = ""
 
     @classmethod
     def from_env(cls) -> Config:
@@ -119,6 +121,7 @@ class Config:
             excluded_dates=excluded,
             commute_page=_require("COMMUTE_PAGE_PATH"),
             home_page=_require("HOME_PAGE_PATH"),
+            claims_page=os.environ.get("CLAIMS_PAGE_PATH", ""),
             calendar_source=source,
             timezone=os.environ.get("TZ", "Europe/Amsterdam"),
             require_calendar_events=_bool("REQUIRE_CALENDAR_EVENTS", True),
