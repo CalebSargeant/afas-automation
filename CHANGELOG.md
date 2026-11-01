@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v1.3.1 (2026-11-01)
+
+### Bug Fixes
+
+- **classify**: Keep a decided day when the calendar read fails
+  ([#23](https://github.com/CalebSargeant/afas-automation/pull/23),
+  [`2f0c53b`](https://github.com/CalebSargeant/afas-automation/commit/2f0c53bf4efb54c214611f41636d82ef71648ffa))
+
+
 ## v1.3.0 (2026-11-01)
 
 ### Bug Fixes
