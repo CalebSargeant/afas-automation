@@ -206,7 +206,9 @@ produce a commute claim for a day spent on leave.
     Treating the second as the first turns an outage into a month of
     working-from-home claims that were never true. Both readers therefore
     return a `degraded` flag alongside the events, and neither is allowed to
-    turn a failure into an empty list. Never discard it.
+    turn a failure into an empty list. Never discard it. The rule only reaches
+    days with no verdict yet: `classify` leaves a day that a good read already
+    decided as it is.
 
     `read_week()` sets it when labels were harvested but every one failed to
     parse. `read_range()` sets it when the connector errored, when it said its

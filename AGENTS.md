@@ -67,7 +67,8 @@ Two rules are worth stating separately because both guard against silent,
 expensive failures:
 
 - A **degraded** calendar read returns `AMBIGUOUS`, never "no bookings, therefore
-  home". An outage must not become a month of wrong claims.
+  home". An outage must not become a month of wrong claims. A day that a good
+  read already decided keeps its verdict.
 - A booking that **disappeared** after a previous run froze the day as office
   returns `AMBIGUOUS` too. Deleting the calendar entry is how the user says "I
   did not actually go in", and that signal must neither be lost nor acted on

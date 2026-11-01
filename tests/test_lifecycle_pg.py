@@ -18,6 +18,7 @@ from types import SimpleNamespace
 import pytest
 
 from afas_declaraties import cli, store
+from afas_declaraties.classify import ClassifierConfig
 from afas_declaraties.models import ClaimType, DayClassification, Reason, Verdict
 from afas_declaraties.readback import FiledLine
 
@@ -110,6 +111,29 @@ def build(cfg, period="2026-09"):
 
 def submit(cfg):
     return cli.cmd_submit(cfg, argparse.Namespace(year=None, period=None))
+
+
+def test_a_failed_calendar_read_leaves_decided_days_alone(conn, cfg, monkeypatch):
+    mon, tue, wed = date(2026, 10, 19), date(2026, 10, 20), date(2026, 10, 21)
+    cfg.calendar_source = "mcp"
+    monkeypatch.setattr(cli, "_classifier", lambda cfg: ClassifierConfig())
+
+    def classify(since, read):
+        monkeypatch.setattr(cli, "_read_calendar", lambda *a: read)
+        args = argparse.Namespace(since=since.isoformat(), until=wed.isoformat(), window=9)
+        assert cli.cmd_classify(cfg, args) == 0
+
+    def days():
+        return [(r["claim_type"], r["state"]) for r in store.days_between(conn, mon, wed)]
+
+    office(conn, mon)
+    store.record_day(conn, DayClassification(tue, Verdict.HOME, [Reason.NO_BOOKING]))
+
+    classify(mon, ([], True))
+    assert days() == [("commute", "planned"), ("home", "planned"), (None, "needs_input")]
+
+    classify(wed, ([], False))
+    assert days()[2] == ("home", "planned")
 
 
 def test_a_live_month_goes_all_the_way_to_filed(conn, cfg, monkeypatch):

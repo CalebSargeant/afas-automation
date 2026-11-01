@@ -594,3 +594,18 @@ A rehearsal's card stays in Slack with its buttons after `DRY_RUN` is flipped, i
 footer says nothing will be filed, and clicking it approved a real filing if the
 lines matched. Dry cards now offer corrections only, and `drafted` cannot be
 approved or rejected, which also covers cards already posted.
+
+## A failed calendar read must not erase what a good one decided
+
+**Symptom.** Days the digest showed as home or commute are back on `needs_input`
+with `calendar_degraded`, and the oldest of them never recovers. The claim card
+lists them under *Niet meegenomen* and nothing else says why.
+
+**Cause.** Classify rewrites its whole 9-day window every night, and one degraded
+read turned every day in it into a question. The next good read healed the window,
+but the oldest day had already dropped out of it and stayed a question until a
+human answered.
+
+**Fix.** `cmd_classify` skips a day that already has a row when the read is
+degraded. A new day still becomes a question, and the next nine nights can settle
+it. A read that failed is not evidence, so a day that was decided stays decided.
