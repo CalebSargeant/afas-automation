@@ -2,6 +2,19 @@
 
 <!-- version list -->
 
+## v1.3.3 (2026-11-04)
+
+### Bug Fixes
+
+- Call days with no ledger row Niet vastgelegd on the card
+  ([#25](https://github.com/CalebSargeant/afas-automation/pull/25),
+  [`5f172f5`](https://github.com/CalebSargeant/afas-automation/commit/5f172f572ca3949a2000f323ef0ae9185e20cc46))
+
+- Quiet wait behind the app's own draft, keep decided cards, fix handler logging
+  ([#25](https://github.com/CalebSargeant/afas-automation/pull/25),
+  [`5f172f5`](https://github.com/CalebSargeant/afas-automation/commit/5f172f572ca3949a2000f323ef0ae9185e20cc46))
+
+
 ## v1.3.2 (2026-11-01)
 
 ### Bug Fixes
