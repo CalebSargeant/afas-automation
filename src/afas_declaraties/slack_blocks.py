@@ -52,16 +52,18 @@ def approval_card(
     already: list[date] | None = None,
     unrecorded: list[date] | None = None,
     open_drafts: list[date] | None = None,
+    top_up: bool = False,
 ) -> list[dict]:
-    """The monthly ask. Everything that will be filed is shown before approval."""
+    """The monthly ask. Everything that will be filed is shown before approval.
+
+    A top-up carries days that came after the month was filed, as a declaration of its own.
+    """
     label = "woon-werk" if claim_type is ClaimType.COMMUTE else "thuiswerkdagen"
     day_lines = "\n".join(f"• {d.strftime('%a %d-%m-%Y')}" for d in days) or "_geen dagen_"
+    title = f"Declaratie {label} — {period:02d}/{year}" + (" (aanvulling)" if top_up else "")
 
     blocks: list[dict] = [
-        {
-            "type": "header",
-            "text": {"type": "plain_text", "text": f"Declaratie {label} — {period:02d}/{year}"},
-        },
+        {"type": "header", "text": {"type": "plain_text", "text": title}},
         {
             "type": "section",
             "fields": [

@@ -105,6 +105,16 @@ def states(conn, days):
         return [r["state"] for r in cur.fetchall()]
 
 
+def rounds(conn, year, period, claim_type):
+    with conn.cursor() as cur:
+        cur.execute(
+            """SELECT * FROM submission WHERE period_year=%s AND period_no=%s AND claim_type=%s
+               ORDER BY round_no""",
+            (year, period, claim_type.value),
+        )
+        return cur.fetchall()
+
+
 def build(cfg, period="2026-09"):
     return cli.cmd_build(cfg, argparse.Namespace(period=period))
 
@@ -300,3 +310,91 @@ def test_a_click_that_died_midway_settles_from_afas(conn, cfg, monkeypatch):
 def test_open_periods_walks_the_year_boundary_in_order(conn):
     office(conn, date(2026, 11, 2), date(2026, 12, 1), date(2027, 1, 4), date(2027, 2, 1))
     assert store.open_periods(conn, 2027, 1) == [(2026, 11), (2026, 12), (2027, 1)]
+
+
+def test_a_filed_month_takes_a_top_up_and_its_sent_round_stays_as_it_was(conn, cfg, monkeypatch):
+    """A day decided after its month went in gets a declaration of its own."""
+    office(conn, *SEP_DAYS)
+    portal = Portal(monkeypatch)
+    told: list[str] = []
+    monkeypatch.setattr(cli, "notify", lambda cfg, text: told.append(text))
+    assert build(cfg) == 0
+    row = store.get_submission(conn, 2026, 9, ClaimType.COMMUTE)
+    assert store.approve_submission(conn, 2026, 9, ClaimType.COMMUTE, row["lines_digest"], "U1")[0]
+    assert submit(cfg) == 0
+    (sent,) = rounds(conn, 2026, 9, ClaimType.COMMUTE)
+
+    late = date(2026, 9, 10)
+    assert store.apply_override(conn, late, ClaimType.COMMUTE, actor="U1")
+    assert build(cfg) == 0
+    assert portal.rows == [late], "the new draft holds only the day that came late"
+    top_up = store.get_submission(conn, 2026, 9, ClaimType.COMMUTE)
+    assert (top_up["round_no"], top_up["state"], top_up["line_count"]) == (
+        2,
+        "awaiting_approval",
+        1,
+    )
+
+    ok, message = store.approve_submission(
+        conn, 2026, 9, ClaimType.COMMUTE, top_up["lines_digest"], "U1"
+    )
+    assert ok, message
+    assert submit(cfg) == 0
+
+    assert portal.alerts == []
+    assert "1 regel(s)" in told[-1] and "10-09-2026" in told[-1], "only the late day was filed"
+    assert states(conn, [*SEP_DAYS, late]) == ["submitted"] * 3
+    first, second = rounds(conn, 2026, 9, ClaimType.COMMUTE)
+    assert first == sent, "a round that went in is history"
+    assert second["state"] == "submitted"
+
+
+#: `submission` as it stood before top-ups, which is what the live database holds.
+_BEFORE_ROUNDS = """
+CREATE TABLE submission (
+    id            bigserial PRIMARY KEY,
+    period_year   integer NOT NULL,
+    period_no     integer NOT NULL,
+    claim_type    text    NOT NULL,
+    lines_digest  text    NOT NULL,
+    line_count    integer NOT NULL,
+    state         text    NOT NULL,
+    approved_by   text,
+    approved_at   timestamptz,
+    insite_ref    text,
+    last_error    text,
+    created_at    timestamptz NOT NULL DEFAULT now(),
+    updated_at    timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT one_submission_per_period UNIQUE (period_year, period_no, claim_type)
+)
+"""
+
+
+def test_a_table_from_before_top_ups_migrates_in_place(conn):
+    with conn.cursor() as cur:
+        cur.execute("DROP TABLE submission")
+        cur.execute(_BEFORE_ROUNDS)
+        cur.execute(
+            """INSERT INTO submission (period_year, period_no, claim_type, lines_digest,
+                                       line_count, state)
+               VALUES (2026, 9, 'commute', 'd1', 2, 'submitted')"""
+        )
+    conn.commit()
+
+    store.ensure_schema(conn)
+    store.ensure_schema(conn)
+    store.upsert_submission(conn, 2026, 9, ClaimType.COMMUTE, "d2", 1, "awaiting_approval")
+
+    assert [
+        (r["round_no"], r["lines_digest"], r["state"])
+        for r in rounds(conn, 2026, 9, ClaimType.COMMUTE)
+    ] == [(1, "d1", "submitted"), (2, "d2", "awaiting_approval")]
+
+
+def test_the_schema_check_does_not_wait_for_an_open_read(conn):
+    """Every job runs it first, and a job holds its connection through a browser run."""
+    store.get_submission(conn, 2026, 9, ClaimType.COMMUTE)
+    with store.connect(DSN) as other:
+        with other.cursor() as cur:
+            cur.execute("SET lock_timeout = '2s'")
+        store.ensure_schema(other)

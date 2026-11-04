@@ -128,6 +128,21 @@ def test_a_dry_card_cannot_be_approved_or_rejected():
     assert [e["action_id"] for e in actions["elements"]] == [CORRECT]
 
 
+def test_a_top_up_card_says_it_is_one():
+    """A second card for a month already filed must not read as the same claim twice."""
+    blocks = approval_card(
+        year=2026,
+        period=8,
+        claim_type=ClaimType.HOME,
+        days=DAYS,
+        digest="d",
+        unresolved=[],
+        dry_run=False,
+        top_up=True,
+    )
+    assert blocks[0]["text"]["text"] == "Declaratie thuiswerkdagen — 08/2026 (aanvulling)"
+
+
 def test_a_decided_card_keeps_what_it_said_and_loses_its_buttons():
     """Approving once wiped the card, and with it the days it said it left out."""
     blocks = approval_card(

@@ -435,15 +435,21 @@ def test_changed_days_get_a_fresh_card(cfg, monkeypatch):
     assert len(work) == 1
 
 
-def test_new_days_in_a_filed_period_are_flagged_once_not_filed(cfg, monkeypatch):
+def test_new_days_in_a_filed_period_become_a_top_up(cfg, monkeypatch):
     store = FakeStore(commute(SEP_2))
     store._submissions = submission(store, [SEP_1], "submitted")
     work, said = plan(cfg, store, monkeypatch)
-    assert work == []
-    assert "02-09-2026" in said[0]
-
-    work, said = plan(cfg, store, monkeypatch)
+    assert [days for *_, days in work] == [[SEP_2]]
     assert said == []
+
+
+@pytest.mark.parametrize("state", ["in_flight", "needs_reconciliation"])
+def test_nothing_is_planned_while_a_click_may_have_landed(cfg, monkeypatch, state):
+    """Only AFAS can say whether those days went in, and `submit` asks it first."""
+    store = FakeStore(commute(SEP_1, SEP_2))
+    store._submissions = submission(store, [SEP_1], state)
+    work, said = plan(cfg, store, monkeypatch)
+    assert work == [] and said == []
 
 
 def test_a_period_with_only_open_questions_is_said_out_loud(cfg, monkeypatch):
