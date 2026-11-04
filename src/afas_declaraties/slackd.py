@@ -30,6 +30,7 @@ from .slack_blocks import (
     REJECT,
     SEP,
     corrections_modal,
+    decided_card,
     parse_decision_value,
 )
 
@@ -80,8 +81,10 @@ def build_app(cfg: Config) -> App:
         with store.connect(cfg.database_url) as conn:
             return store.claim_slack_interaction(conn, key, kind, actor)
 
+    # Bolt fills every parameter by name and passes None for one it does not
+    # know, defaults notwithstanding, so handlers log through the module logger.
     @app.action(APPROVE)
-    def handle_approve(ack, body, client, logger_=logger):
+    def handle_approve(ack, body, client):
         ack()
         _touch_heartbeat()
         user = body["user"]["id"]
@@ -93,16 +96,16 @@ def build_app(cfg: Config) -> App:
             client.chat_postEphemeral(
                 channel=channel, user=user, text="Je staat niet op de goedkeurderslijst."
             )
-            logger_.warning("slackd: unauthorised approval attempt by %s", user)
+            logger.warning("slackd: unauthorised approval attempt by %s", user)
             return
         if not once(body, "approve", user):
-            logger_.info("slackd: duplicate approval delivery ignored")
+            logger.info("slackd: duplicate approval delivery ignored")
             return
 
         try:
             year, period, claim_type, digest = parse_decision_value(raw)
         except ValueError:
-            logger_.error("slackd: malformed decision value %r", raw)
+            logger.error("slackd: malformed decision value %r", raw)
             client.chat_postEphemeral(
                 channel=channel, user=user, text="Ongeldige knopwaarde; niets gedaan."
             )
@@ -113,12 +116,13 @@ def build_app(cfg: Config) -> App:
 
         if ok:
             # Buttons are removed on any terminal decision so a stale card can
-            # never be clicked a second time.
+            # never be clicked a second time. The rest of the card stays.
+            outcome = f":white_check_mark: Goedgekeurd door <@{user}> — {message}"
             client.chat_update(
                 channel=channel,
                 ts=ts,
-                text=f":white_check_mark: Goedgekeurd door <@{user}> — {message}",
-                blocks=[],
+                text=outcome,
+                blocks=decided_card(body["message"].get("blocks") or [], outcome),
             )
             client.chat_postMessage(
                 channel=channel, thread_ts=ts, text="Wordt ingestuurd bij de volgende submit-run."
@@ -152,11 +156,12 @@ def build_app(cfg: Config) -> App:
                 text=":warning: Niet afgewezen: deze declaratie wacht niet meer op een beslissing.",
             )
             return
+        outcome = f":x: Afgewezen door <@{user}>. Er wordt niets ingediend."
         client.chat_update(
             channel=body["channel"]["id"],
             ts=body["message"]["ts"],
-            text=f":x: Afgewezen door <@{user}>. Er wordt niets ingediend.",
-            blocks=[],
+            text=outcome,
+            blocks=decided_card(body["message"].get("blocks") or [], outcome),
         )
 
     @app.action(CORRECT)
@@ -192,7 +197,7 @@ def build_app(cfg: Config) -> App:
         )
 
     @app.view(MODAL_CALLBACK)
-    def handle_corrections(ack, body, view, client, logger_=logger):
+    def handle_corrections(ack, body, view, client):
         user = body["user"]["id"]
         if not authorised(user):
             ack(
@@ -205,7 +210,7 @@ def build_app(cfg: Config) -> App:
             # channel would get a second "N dagen bijgewerkt" and the ledger a
             # second overridden_at. Same guard as the approval path.
             ack()
-            logger_.info("slackd: duplicate corrections delivery ignored")
+            logger.info("slackd: duplicate corrections delivery ignored")
             return
 
         # Ack before the writes, not after. Slack drops a view_submission that

@@ -17,7 +17,7 @@
 | Alerts | `src/afas_declaraties/alerts.py` | Posts failed and skipped runs straight to Slack, without the database. |
 | Ledger | `src/afas_declaraties/store.py` | Raw-SQL Postgres store, advisory lock, approval digest, interaction dedupe. |
 | Config | `src/afas_declaraties/config.py` | `Config.from_env()`. No tenant-specific defaults. |
-| Slack blocks | `src/afas_declaraties/slack_blocks.py` | `weekly_digest()`, `approval_card()`. Pure. |
+| Slack blocks | `src/afas_declaraties/slack_blocks.py` | `weekly_digest()`, `approval_card()`, `decided_card()`. Pure. |
 | Slack daemon | `src/afas_declaraties/slackd.py` | Socket Mode app and the `/tmp/healthy` heartbeat. |
 | CLI | `src/afas_declaraties/cli.py` | `classify`, `digest`, `build`, `submit`, `slackd`, `override`. |
 | Recon tooling | `scripts/` | `bootstrap_session.py`, `explore_insite.py`. Dev only. |
@@ -95,8 +95,12 @@ is picked up the next morning instead of being lost.
    post leaves nothing recorded and the next morning tries again.
 
 A live run also holds back when another draft of that claim type is open, because
-the task list cannot tell two drafts apart. That month waits, with one alert, and
-the job exits 1 each day until it clears, which keeps the cluster's alert on it.
+the task list cannot tell two drafts apart. When that draft is the app's own (its
+lines match a submission awaiting approval or approved), the month waits behind it
+with one plain message and the job exits 0: the next `submit` sends it, and the
+build after that drafts this month. Any other open draft (made by hand, edited,
+rejected or failed) gets one alert, and the job exits 1 each day until it clears,
+which keeps the cluster's alert on it.
 
 A dry card offers corrections only. There is nothing behind it to approve, and
 `approve_submission` refuses a `drafted` row, so a click on a rehearsal cannot

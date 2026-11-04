@@ -11,6 +11,7 @@ from afas_declaraties.slack_blocks import (
     SEP,
     approval_card,
     corrections_modal,
+    decided_card,
     decision_value,
     parse_decision_value,
     weekly_digest,
@@ -79,7 +80,7 @@ def test_the_card_names_days_left_out_after_reading_afas():
     )
     text = " ".join(str(b) for b in blocks)
     assert "Al in AFAS* (1): 03-08" in text
-    assert "Nooit geclassificeerd* (1): 04-08" in text
+    assert "Niet vastgelegd* (1): 04-08" in text
     assert "Open concept in AFAS* (1): 02-06" in text
 
 
@@ -95,7 +96,7 @@ def test_a_clean_card_has_no_warning_sections():
     )
     text = " ".join(str(b) for b in blocks)
     assert "Al in AFAS" not in text
-    assert "Nooit geclassificeerd" not in text
+    assert "Niet vastgelegd" not in text
     assert "Open concept" not in text
 
 
@@ -125,6 +126,24 @@ def test_a_dry_card_cannot_be_approved_or_rejected():
     )
     actions = next(b for b in blocks if b["type"] == "actions")
     assert [e["action_id"] for e in actions["elements"]] == [CORRECT]
+
+
+def test_a_decided_card_keeps_what_it_said_and_loses_its_buttons():
+    """Approving once wiped the card, and with it the days it said it left out."""
+    blocks = approval_card(
+        year=2026,
+        period=8,
+        claim_type=ClaimType.HOME,
+        days=DAYS,
+        digest="d",
+        unresolved=[],
+        dry_run=False,
+        unrecorded=[date(2026, 8, 4)],
+    )
+    decided = decided_card(blocks, "Goedgekeurd door <@U1>")
+    assert decided[:-1] == [b for b in blocks if b["type"] != "actions"]
+    assert decided[-1]["text"]["text"] == "Goedgekeurd door <@U1>"
+    assert "Niet vastgelegd* (1): 04-08" in str(decided)
 
 
 def test_corrections_modal_block_ids_parse_back_to_dates():

@@ -73,13 +73,14 @@ def _lock_held(cfg: Config, command: str) -> int:
     return 1
 
 
-def _alert_once(cfg: Config, conn, key: str, text: str) -> None:
+def _alert_once(cfg: Config, conn, key: str, text: str, post=None) -> None:
     """For a condition that stays true until a human acts, so it is said once.
 
     Said means the post went through. A failed one is tried again on the next run.
+    ``post`` is :func:`notify` for a condition that is expected, not a failure.
     """
     key = f"alert:{key}"
-    if not store.interaction_seen(conn, key) and alert(cfg, text):
+    if not store.interaction_seen(conn, key) and (post or alert)(cfg, text):
         store.claim_slack_interaction(conn, key, "alert", "afas")
 
 
@@ -306,6 +307,34 @@ def _fill_rows(cfg: Config, page, path: str, days: list[date]) -> None:
         confirm_row(page, window)
 
 
+def _own_draft(conn, claim_type: ClaimType, drafts: list[date]) -> dict | None:
+    """The submission behind an open draft, if this app made it and it is on its way.
+
+    Matched on the digest: a draft someone added a line to, or took one from, is no
+    longer the one on the card, and needs a human.
+    """
+    periods = {store.period_for(d) for d in drafts}
+    if len(periods) != 1:
+        return None
+    sub = store.get_submission(conn, *periods.pop(), claim_type)
+    if not sub or sub["state"] not in ("awaiting_approval", "approved"):
+        return None
+    return sub if sub["lines_digest"] == store.lines_digest(drafts, claim_type) else None
+
+
+def _waits_for(label: str, claim_type: ClaimType, sub: dict) -> str:
+    ahead = f"{claim_type.value} {sub['period_no']:02d}/{sub['period_year']}"
+    if sub["state"] == "approved":
+        return (
+            f"{label} wacht op {ahead}, dat is goedgekeurd. De eerstvolgende submit stuurt "
+            f"het in en de build daarna maakt {label} aan."
+        )
+    return (
+        f"{label} wacht op {ahead}, dat op je goedkeuring wacht. Na goedkeuren stuurt de "
+        f"eerstvolgende submit het in en maakt de build daarna {label} aan."
+    )
+
+
 def _build_one(cfg: Config, conn, page, year, period, claim_type, days) -> bool:
     """One claim type for one period. True unless a human has to step in."""
     label = f"{claim_type.value} {period:02d}/{year}"
@@ -354,6 +383,18 @@ def _build_one(cfg: Config, conn, page, year, period, claim_type, days) -> bool:
         if pos.other_drafts:
             # The task list cannot tell two drafts of one type apart, so a second
             # would block both. This one waits its turn.
+            ahead = _own_draft(conn, claim_type, pos.other_drafts)
+            if ahead:
+                # The queue working as designed: the card already asks for the one
+                # thing a human can do, so this is news, not an alert.
+                _alert_once(
+                    cfg,
+                    conn,
+                    f"waits:{claim_type.value}:{_dates(pos.other_drafts)}",
+                    _waits_for(label, claim_type, ahead),
+                    post=notify,
+                )
+                return not pos.conflict
             _alert_once(
                 cfg,
                 conn,
