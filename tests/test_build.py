@@ -269,19 +269,63 @@ def test_a_draft_that_differs_from_the_ledger_fails_loudly(cfg, monkeypatch):
     assert "klopt niet" in portal.alerts[0]
 
 
-def test_another_open_draft_makes_this_one_wait(cfg, monkeypatch):
+def test_a_draft_the_app_did_not_make_makes_this_one_wait(cfg, monkeypatch):
     """A second draft of a type would block both, because tasks cannot be told apart."""
     store = FakeStore(commute(SEP_1))
     monkeypatch.setattr(cli, "store", store)
     portal = Portal(monkeypatch, [line(JUNE, "Medewerker")])
 
-    assert build(cfg) == 1, "a month that waits is a skipped month, so the job says so"
+    assert build(cfg) == 1, "nothing here will clear that draft, so the job says so"
     assert portal.created == 0
     assert store.upserts == []
     assert "02-06-2026" in portal.alerts[0]
 
     assert build(cfg) == 1
     assert len(portal.alerts) == 1, "said once, it stays true until a human acts"
+
+
+def own(day, state, digest=None):
+    """The submission the app recorded when it drafted ``day``'s month."""
+    return {
+        (day.year, day.month, ClaimType.COMMUTE): {
+            "period_year": day.year,
+            "period_no": day.month,
+            "state": state,
+            "lines_digest": digest or FakeStore().lines_digest([day], ClaimType.COMMUTE),
+        }
+    }
+
+
+@pytest.mark.parametrize("state", ["awaiting_approval", "approved"])
+def test_a_month_behind_the_apps_own_draft_waits_quietly(cfg, monkeypatch, state):
+    """That draft is on its way out. Waiting for it is the plan, not a failure."""
+    store = FakeStore(commute(SEP_1), submissions=own(JUNE, state))
+    monkeypatch.setattr(cli, "store", store)
+    portal = Portal(monkeypatch, [line(JUNE, "Medewerker")])
+    told: list[str] = []
+    monkeypatch.setattr(cli, "notify", lambda cfg, text: told.append(text) or True)
+
+    assert build(cfg) == 0, "nobody has anything to fix, so the cluster has nothing to say"
+    assert build(cfg) == 0
+    assert portal.created == 0
+    assert store.upserts == []
+    assert portal.alerts == []
+    assert len(told) == 1, "said once per open draft"
+    assert "commute 09/2026 wacht op commute 06/2026" in told[0]
+
+
+@pytest.mark.parametrize(
+    "submissions",
+    [own(JUNE, "rejected"), own(JUNE, "failed"), own(JUNE, "approved", digest="edited")],
+    ids=["rejected", "failed", "edited in AFAS"],
+)
+def test_an_own_draft_that_stopped_moving_still_needs_a_human(cfg, monkeypatch, submissions):
+    store = FakeStore(commute(SEP_1), submissions=submissions)
+    monkeypatch.setattr(cli, "store", store)
+    portal = Portal(monkeypatch, [line(JUNE, "Medewerker")])
+
+    assert build(cfg) == 1
+    assert "02-06-2026" in portal.alerts[0]
 
 
 def test_an_alert_slack_did_not_take_is_said_again_on_the_next_run(cfg, monkeypatch):

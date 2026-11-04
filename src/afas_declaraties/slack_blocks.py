@@ -165,6 +165,15 @@ def approval_card(
     return blocks
 
 
+def decided_card(blocks: list[dict], outcome: str) -> list[dict]:
+    """The card once decided: its buttons give way to who decided what.
+
+    The rest stays, so the days it left out are still on the card they were decided on.
+    """
+    kept = [b for b in blocks if b.get("type") != "actions"]
+    return kept + [{"type": "section", "text": {"type": "mrkdwn", "text": outcome}}]
+
+
 def weekly_digest(rows: list[dict], *, week_start: date) -> list[dict]:
     """The weekly review. Unresolved days lead, because they need an answer."""
     needs = [r for r in rows if r["state"] == "needs_input"]

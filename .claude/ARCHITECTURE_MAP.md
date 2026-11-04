@@ -24,7 +24,7 @@ live portal; everything before it has.
 | `readback.py` | What AFAS holds. `read_lines()` walks every page of *Mijn declaraties*, `parse_lines()` is pure and raises `PortalChanged` on anything it cannot read, `position()` sorts days into filed / draft / absent / conflict. Build and submit trust this over the ledger. | Playwright |
 | `alerts.py` | `alert()` / `notify()` post straight to Slack, never raise and never touch the database, because a dead database is something they have to report. | Slack |
 | `store.py` | The claim ledger on the shared CNPG Postgres. Raw SQL, idempotent DDL, no ORM. `claim_day` is keyed by **date**, so a day physically cannot hold both a commute and a WFH claim. `browser_lock()` is a `pg_try_advisory_lock`. `lines_digest()` binds a Slack approval to exact content. `claim_slack_interaction()` dedupes Socket Mode redeliveries. | Postgres |
-| `slack_blocks.py` | Block Kit builders: `weekly_digest()`, `approval_card()`. Pure. | none |
+| `slack_blocks.py` | Block Kit builders: `weekly_digest()`, `approval_card()`, `decided_card()`. Pure. | none |
 | `slackd.py` | Socket Mode app. Acks first, writes one row, touches the `/tmp/healthy` heartbeat. Never drives Playwright. | Slack, Postgres |
 
 ## Data flow

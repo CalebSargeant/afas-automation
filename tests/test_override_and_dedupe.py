@@ -14,11 +14,13 @@ Two bugs found by reading the ledger after a real correction went through Slack:
 
 from __future__ import annotations
 
+import inspect
 from datetime import date
 
 import pytest
+from slack_bolt.kwargs_injection.args import Args
 
-from afas_declaraties import slackd, store
+from afas_declaraties import slack_blocks, slackd, store
 from afas_declaraties.models import ClaimType, Verdict
 
 # --- what apply_override writes -------------------------------------------------
@@ -126,12 +128,16 @@ class FakeApp:
 class FakeClient:
     def __init__(self):
         self.posted = []
+        self.updated = []
 
     def chat_postMessage(self, **kw):
         self.posted.append(kw)
 
     def chat_postEphemeral(self, **kw):
         self.posted.append(kw)
+
+    def chat_update(self, **kw):
+        self.updated.append(kw)
 
 
 class Cfg:
@@ -162,12 +168,13 @@ def view_state(days):
 
 
 @pytest.fixture
-def handler(monkeypatch):
+def app(monkeypatch):
     app = FakeApp()
     monkeypatch.setattr(slackd, "App", lambda **kw: app)
 
     applied: list[tuple] = []
     claimed: list[str] = []
+    app.applied, app.claimed = applied, claimed
 
     class FakeStore:
         @staticmethod
@@ -187,9 +194,22 @@ def handler(monkeypatch):
             applied.append((day, claim, user))
             return True
 
+        @staticmethod
+        def approve_submission(conn, year, period, claim_type, digest, user):
+            return True, "approved 1 day(s)"
+
+        @staticmethod
+        def reject_submission(conn, year, period, claim_type):
+            return True
+
     monkeypatch.setattr(slackd, "store", FakeStore)
     slackd.build_app(Cfg())
-    return app.handlers[("view", slackd.MODAL_CALLBACK)], applied, claimed
+    return app
+
+
+@pytest.fixture
+def handler(app):
+    return app.handlers[("view", slackd.MODAL_CALLBACK)], app.applied, app.claimed
 
 
 def test_a_correction_is_applied_once(handler):
@@ -240,3 +260,52 @@ def test_untouched_days_are_left_alone(handler):
     state["state"]["values"][f"day{slackd.SEP}2026-09-04"] = {"choice": {}}
     fn(ack=lambda **kw: None, body=view_body(), view=state, client=FakeClient())
     assert applied == [(date(2026, 9, 3), ClaimType.HOME, "U1")]
+
+
+# --- the decision handlers ------------------------------------------------------
+
+
+def card_body(user="U1"):
+    blocks = slack_blocks.approval_card(
+        year=2026,
+        period=9,
+        claim_type=ClaimType.HOME,
+        days=[date(2026, 9, 1)],
+        digest="d",
+        unresolved=[],
+        dry_run=False,
+        unrecorded=[date(2026, 9, 2)],
+    )
+    actions = next(b for b in blocks if b["type"] == "actions")
+    return {
+        "user": {"id": user},
+        "trigger_id": "T-card",
+        "channel": {"id": "C1"},
+        "message": {"ts": "1.0", "blocks": blocks},
+        "actions": [{"value": actions["elements"][0]["value"]}],
+    }
+
+
+@pytest.mark.parametrize(
+    "action, said", [(slackd.APPROVE, "Goedgekeurd"), (slackd.REJECT, "Afgewezen")]
+)
+def test_a_decision_swaps_only_the_buttons(app, action, said):
+    """Approving once wiped the card, so the days it left out read as covered."""
+    client = FakeClient()
+    app.handlers[("action", action)](ack=lambda: None, body=card_body(), client=client)
+
+    (update,) = client.updated
+    assert [b["type"] for b in update["blocks"]].count("actions") == 0
+    assert "Nooit geclassificeerd* (1): 02-09" in str(update["blocks"])
+    assert said in update["blocks"][-1]["text"]["text"]
+
+
+def test_handlers_ask_bolt_only_for_arguments_it_injects(app):
+    """Bolt passes None for a name it does not know, whatever the default says.
+
+    `logger_` arrived as None, so the approval handler raised on exactly the paths
+    that were meant to log: an unauthorised click, a replay, a malformed value.
+    """
+    known = set(inspect.signature(Args).parameters)
+    for key, fn in app.handlers.items():
+        assert set(inspect.signature(fn).parameters) <= known, key
