@@ -296,7 +296,7 @@ def test_a_decision_swaps_only_the_buttons(app, action, said):
 
     (update,) = client.updated
     assert [b["type"] for b in update["blocks"]].count("actions") == 0
-    assert "Nooit geclassificeerd* (1): 02-09" in str(update["blocks"])
+    assert "Niet vastgelegd* (1): 02-09" in str(update["blocks"])
     assert said in update["blocks"][-1]["text"]["text"]
 
 

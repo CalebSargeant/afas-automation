@@ -80,7 +80,7 @@ def test_the_card_names_days_left_out_after_reading_afas():
     )
     text = " ".join(str(b) for b in blocks)
     assert "Al in AFAS* (1): 03-08" in text
-    assert "Nooit geclassificeerd* (1): 04-08" in text
+    assert "Niet vastgelegd* (1): 04-08" in text
     assert "Open concept in AFAS* (1): 02-06" in text
 
 
@@ -96,7 +96,7 @@ def test_a_clean_card_has_no_warning_sections():
     )
     text = " ".join(str(b) for b in blocks)
     assert "Al in AFAS" not in text
-    assert "Nooit geclassificeerd" not in text
+    assert "Niet vastgelegd" not in text
     assert "Open concept" not in text
 
 
@@ -143,7 +143,7 @@ def test_a_decided_card_keeps_what_it_said_and_loses_its_buttons():
     decided = decided_card(blocks, "Goedgekeurd door <@U1>")
     assert decided[:-1] == [b for b in blocks if b["type"] != "actions"]
     assert decided[-1]["text"]["text"] == "Goedgekeurd door <@U1>"
-    assert "Nooit geclassificeerd* (1): 04-08" in str(decided)
+    assert "Niet vastgelegd* (1): 04-08" in str(decided)
 
 
 def test_corrections_modal_block_ids_parse_back_to_dates():

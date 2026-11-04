@@ -88,7 +88,12 @@ def approval_card(
         )
 
     for icon, title, listed, note in (
-        (":warning:", "Nooit geclassificeerd", unrecorded, "Worden niet gedeclareerd."),
+        (
+            ":warning:",
+            "Niet vastgelegd",
+            unrecorded,
+            "Geen thuis- of kantoordag bekend, dus niet gedeclareerd.",
+        ),
         (":white_check_mark:", "Al in AFAS", already, "Niet nog een keer op deze declaratie."),
         (":warning:", "Open concept in AFAS", open_drafts, "Blokkeert insturen van dit type."),
     ):
