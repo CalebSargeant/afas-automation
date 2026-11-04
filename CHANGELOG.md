@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v1.4.0 (2026-11-04)
+
+### Features
+
+- File days that come after a month went in as a top-up
+  ([#26](https://github.com/CalebSargeant/afas-automation/pull/26),
+  [`a476d51`](https://github.com/CalebSargeant/afas-automation/commit/a476d516112f0ebaf602fb0bbc04b97ddc1562a6))
+
+
 ## v1.3.3 (2026-11-04)
 
 ### Bug Fixes
