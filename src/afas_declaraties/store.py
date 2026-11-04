@@ -60,6 +60,9 @@ CREATE TABLE IF NOT EXISTS submission (
     period_year   integer NOT NULL,
     period_no     integer NOT NULL,
     claim_type    text    NOT NULL,
+    -- 1 is the month's declaration. Days that turn up after it is filed go in
+    -- a top-up, the next round, which is a declaration of its own in AFAS.
+    round_no      integer NOT NULL DEFAULT 1,
     lines_digest  text    NOT NULL,
     line_count    integer NOT NULL,
     state         text    NOT NULL,
@@ -69,12 +72,28 @@ CREATE TABLE IF NOT EXISTS submission (
     last_error    text,
     created_at    timestamptz NOT NULL DEFAULT now(),
     updated_at    timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT one_submission_per_round UNIQUE (period_year, period_no, claim_type, round_no),
     CONSTRAINT submission_state_valid CHECK (
         state IN ('drafted','awaiting_approval','approved','in_flight',
                   'submitted','rejected','failed','needs_reconciliation')
-    ),
-    CONSTRAINT one_submission_per_period UNIQUE (period_year, period_no, claim_type)
+    )
 );
+
+-- A table from before top-ups held one declaration per period and type. Guarded
+-- because an ALTER waits for every open transaction on the table, and every job
+-- runs this first.
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint
+                   WHERE conrelid = 'submission'::regclass
+                     AND conname = 'one_submission_per_round') THEN
+        PERFORM set_config('lock_timeout', '10s', true);
+        ALTER TABLE submission ADD COLUMN IF NOT EXISTS round_no integer NOT NULL DEFAULT 1;
+        ALTER TABLE submission DROP CONSTRAINT IF EXISTS one_submission_per_period;
+        ALTER TABLE submission ADD CONSTRAINT one_submission_per_round
+            UNIQUE (period_year, period_no, claim_type, round_no);
+    END IF;
+END $$;
 
 -- Socket Mode redelivers on reconnect, so every handler must be able to
 -- recognise a replay. Without this a reconnect during an approval could submit
@@ -307,6 +326,14 @@ def interaction_seen(conn: psycopg.Connection, dedupe_key: str) -> bool:
         return cur.fetchone() is not None
 
 
+def open_round(conn: psycopg.Connection, year: int, period: int, claim_type: ClaimType) -> int:
+    """The round a draft for this period belongs to: the latest, or a new one once it is filed."""
+    row = get_submission(conn, year, period, claim_type)
+    if row is None:
+        return 1
+    return row["round_no"] + 1 if row["state"] == "submitted" else row["round_no"]
+
+
 def upsert_submission(
     conn: psycopg.Connection,
     year: int,
@@ -319,13 +346,14 @@ def upsert_submission(
     error: str | None = None,
 ) -> None:
     """Record (or refresh) the declaration we intend to file for a period."""
+    round_no = open_round(conn, year, period, claim_type)
     with conn.cursor() as cur:
         cur.execute(
             """
-            INSERT INTO submission (period_year, period_no, claim_type,
+            INSERT INTO submission (period_year, period_no, claim_type, round_no,
                                     lines_digest, line_count, state, last_error)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
-            ON CONFLICT (period_year, period_no, claim_type) DO UPDATE SET
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (period_year, period_no, claim_type, round_no) DO UPDATE SET
                 lines_digest = EXCLUDED.lines_digest,
                 line_count   = EXCLUDED.line_count,
                 state        = EXCLUDED.state,
@@ -335,7 +363,7 @@ def upsert_submission(
             -- classifier later changes its mind about one of the days.
             WHERE submission.state NOT IN ('submitted', 'in_flight')
             """,
-            (year, period, claim_type.value, digest, line_count, state, error),
+            (year, period, claim_type.value, round_no, digest, line_count, state, error),
         )
     conn.commit()
 
@@ -343,10 +371,12 @@ def upsert_submission(
 def get_submission(
     conn: psycopg.Connection, year: int, period: int, claim_type: ClaimType
 ) -> dict | None:
+    """The latest round: the one still moving, or the last one filed."""
     with conn.cursor() as cur:
         cur.execute(
             """SELECT * FROM submission
-               WHERE period_year=%s AND period_no=%s AND claim_type=%s""",
+               WHERE period_year=%s AND period_no=%s AND claim_type=%s
+               ORDER BY round_no DESC LIMIT 1""",
             (year, period, claim_type.value),
         )
         return cur.fetchone()
@@ -455,12 +485,14 @@ def set_submission_state(
     insite_ref: str | None = None,
     digest: str | None = None,
 ) -> None:
+    """Move the round that is still open. A filed round is history and stays as it was."""
     with conn.cursor() as cur:
         cur.execute(
             """UPDATE submission SET state=%s, last_error=%s,
                       insite_ref=COALESCE(%s, insite_ref),
                       lines_digest=COALESCE(%s, lines_digest), updated_at=now()
-               WHERE period_year=%s AND period_no=%s AND claim_type=%s""",
+               WHERE period_year=%s AND period_no=%s AND claim_type=%s
+                 AND state <> 'submitted'""",
             (state, error, insite_ref, digest, year, period, claim_type.value),
         )
     conn.commit()

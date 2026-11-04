@@ -106,6 +106,13 @@ A dry card offers corrections only. There is nothing behind it to approve, and
 `approve_submission` refuses a `drafted` row, so a click on a rehearsal cannot
 count after the flip to live.
 
+A month that has gone in can still gain days, for example a day corrected after
+the claim was sent. Those days go in a top-up: the next `round_no` for that period
+and claim type, which is a declaration of its own in AFAS with its own card
+(headed *aanvulling*) and its own approval. A new round opens only once the latest
+one is `submitted`, so a period has at most one round in motion, and a round that
+has gone in is never rewritten.
+
 !!! danger "The final submission is live"
     *Declaratie insturen* on the draft task is the one irreversible step in
     the system, and `cli submit` performs it whenever `DRY_RUN=false`. Four

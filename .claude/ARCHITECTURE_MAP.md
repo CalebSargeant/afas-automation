@@ -62,6 +62,10 @@ loses the rest.
 that is `submitted`/`drafted` or carries an override; `apply_override` refuses a
 `submitted` day.
 
+`submission` is one row per period, claim type and `round_no`. Days that become
+claimable after a round is `submitted` go in the next round, a top-up with its own
+card and approval. Only the latest round moves; a filed round is never rewritten.
+
 ## Scripts (dev only)
 
 - `scripts/bootstrap_session.py` seeds/refreshes `browser-profile/`. `--manual`

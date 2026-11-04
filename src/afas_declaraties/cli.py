@@ -37,8 +37,8 @@ logger = logging.getLogger("afas")
 #: A month falls due on this day of the month after it.
 BUILD_DAY = 28
 
-#: A declaration has gone to the portal; `build` must not touch it again.
-_SENT_STATES = {"submitted", "in_flight", "needs_reconciliation"}
+#: The click may have landed. Only AFAS can say, and `submit` asks it before anyone builds.
+_UNSETTLED_STATES = {"in_flight", "needs_reconciliation"}
 #: A card is out and the next move is a human's.
 _WAITING_STATES = {"awaiting_approval", "approved", "rejected"}
 #: The commands a schedule runs, so nobody is watching their terminal.
@@ -235,9 +235,11 @@ def _post_card(
 ) -> None:
     if not cfg.slack_channel:
         return
+    top_up = store.open_round(conn, year, period, claim_type) > 1
+    what = f"{claim_type.value} {period:02d}/{year}" + (" (aanvulling)" if top_up else "")
     _slack(cfg).chat_postMessage(
         channel=cfg.slack_channel,
-        text=f"Declaratie {claim_type.value} {period:02d}/{year} klaar",
+        text=f"Declaratie {what} klaar",
         blocks=approval_card(
             year=year,
             period=period,
@@ -249,6 +251,7 @@ def _post_card(
             already=already or [],
             unrecorded=_unrecorded_weekdays(conn, year, period),
             open_drafts=open_drafts or [],
+            top_up=top_up,
         ),
     )
 
@@ -277,23 +280,14 @@ def _plan_build(cfg: Config, conn, periods: list[tuple[int, int]]) -> list[tuple
                 continue
             existing = store.get_submission(conn, year, period, claim_type)
             if existing:
-                digest = store.lines_digest(days, claim_type)
-                same = existing["lines_digest"] == digest
                 state = existing["state"]
-                if state in _SENT_STATES:
-                    if not same:
-                        _alert_once(
-                            cfg,
-                            conn,
-                            f"late:{year}-{period}:{claim_type.value}:{digest}",
-                            f"{claim_type.value} {period:02d}/{year} is al ingestuurd, maar deze "
-                            f"dagen staan nog open: {_dates(days)}. Dien ze met de hand in of "
-                            "corrigeer ze.",
-                        )
+                if state in _UNSETTLED_STATES:
                     continue
+                same = existing["lines_digest"] == store.lines_digest(days, claim_type)
                 # `drafted` is a dry run's rehearsal. A live run still has to do it for real.
                 if same and (state in _WAITING_STATES or (state == "drafted" and cfg.dry_run)):
                     continue
+            # Past a `submitted` round, days still claimable came after it went in: a top-up.
             work.append((year, period, claim_type, days))
     return work
 
