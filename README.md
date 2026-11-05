@@ -104,8 +104,7 @@ in Postgres, because Socket Mode redelivers on reconnect.
 
 Runs every morning and files what a human approved. It reads AFAS before the
 *Declaratie insturen* click and again after it, and a claim counts as filed only
-when *Mijn declaraties* shows its lines with the manager. That click has never
-run against the live portal.
+when *Mijn declaraties* shows its lines with the manager.
 
 ### When something goes wrong
 

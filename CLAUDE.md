@@ -14,8 +14,8 @@ See @.claude/QUICK_START.md. Tests are `python -m pytest`; `test_classify.py` an
 `test_calendar_owa.py` need no browser, no network and no database. `cli submit`
 is LIVE: it clicks the irreversible *Declaratie insturen* action whenever
 `DRY_RUN=false`, gated by a Slack approval from an allow-listed user and a
-`lines_digest` re-derived from the ledger. That final click has never been
-executed against the live portal.
+`lines_digest` re-derived from the ledger. That click files real claims on the
+live portal.
 
 ## Architecture
 @.claude/ARCHITECTURE_MAP.md

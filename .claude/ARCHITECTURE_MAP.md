@@ -3,8 +3,7 @@
 Python package `src/afas_declaraties/`, entrypoint `python -m afas_declaraties.cli`.
 Commands: `classify`, `digest`, `build`, `submit`, `slackd`, `override`.
 `submit` is LIVE when `DRY_RUN=false` -- it clicks the irreversible
-*Declaratie insturen* action. That click has never been executed against the
-live portal; everything before it has.
+*Declaratie insturen* action against the live portal.
 
 ## Modules
 
