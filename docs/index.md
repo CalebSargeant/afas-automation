@@ -35,7 +35,7 @@ One image, five commands, five workloads:
 | `slackd` | Deployment (1 replica) | always on |
 | `override` | manual | on demand |
 
-The final *Declaratie insturen* click **is implemented** and runs when `DRY_RUN=false`. It has never been executed against the live portal.
+The final *Declaratie insturen* click runs when `DRY_RUN=false` and files real claims.
 See [Architecture](architecture.md#build).
 
 ## Design principles

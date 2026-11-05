@@ -125,9 +125,6 @@ has gone in is never rewritten.
     type are refused rather than guessed -- the task list shows no period, and
     filing the wrong month cannot be undone.
 
-    The click itself has never been executed against the live portal, because
-    doing so files a real claim. Everything up to it has been.
-
 ### Submit
 
 Runs daily at 07:00 and files whatever a human approved. Most mornings it reads
