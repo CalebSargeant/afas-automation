@@ -624,3 +624,22 @@ this also covers losing the header after a click. The log prints any header labe
 did find, which is chrome and holds no calendar data, so the next failure says what
 was on the page. The closing log line reuses the verified week: reading the header
 again there raised `TypeError` when it had gone.
+
+## Entra sometimes asks which second factor to use
+
+**Symptom.** A browser job dies two minutes into its sign-in with
+`EntraLoginError: sign-in did not complete within the deadline; last state
+'waiting', password was submitted, pane 'Bevestig uw identiteit'`. The runs
+before and after it sign in normally.
+
+**Cause.** Now and then Entra answers the password with its method picker
+("Verify your identity") instead of the code prompt. The state machine had no
+state for it, so it waited out the deadline.
+
+**Fix.** `entra._choose_code_method()` picks the option whose `data-value` is
+`PhoneAppOTP`, the proof type a TOTP answers, and falls back to the label only
+when no option has that proof type. The code prompt after it is the normal TOTP
+step. A picker without that option fails at once and names the proof types it
+did offer, never their labels, because a label can hold part of a phone number.
+Any pane the loop does not know fails after `STALL_SECONDS` with its title,
+instead of at the deadline.

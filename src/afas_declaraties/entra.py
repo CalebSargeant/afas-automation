@@ -1,7 +1,7 @@
 """Microsoft Entra ID sign-in, driven with Playwright.
 
-Written against the interactive flow only: email -> password -> TOTP -> "Stay
-signed in". It deliberately does no credential entry when the tenant already
+Written against the interactive flow only: email -> password -> (method picker)
+-> TOTP -> "Stay signed in". It deliberately does no credential entry when the tenant already
 recognises the persisted session; the caller decides whether a full sign-in is
 even needed by checking :func:`is_signed_in` first.
 """
@@ -50,6 +50,18 @@ SEL_ERROR = "#passwordError, #usernameError, .alert-error"
 # holds a partial session, so it cannot be treated as an unexpected state.
 SEL_TILES = "#tilesHolder"
 SEL_OTHER_TILE = "#otherTile"
+
+# "Bevestig uw identiteit" / "Verify your identity". Now and then Entra asks
+# which second factor to use instead of going straight to the code prompt.
+SEL_METHOD_PICKER = "#idDiv_SAOTCS_Proofs"
+SEL_METHOD_OPTION = f"{SEL_METHOD_PICKER} [data-value], {SEL_METHOD_PICKER} [role='button']"
+# The proof type behind "use a verification code", the one a TOTP answers.
+CODE_METHOD = "PhoneAppOTP"
+CODE_METHOD_LABELS = ("verificatiecode", "verification code")
+
+# Every pane the loop knows shows up within seconds, so this long on a pane it
+# does not know means nothing is coming.
+STALL_SECONDS = 30
 
 
 class EntraLoginError(RuntimeError):
@@ -138,7 +150,9 @@ def _is_active(page: Page, selector: str, *, focusable: bool = True) -> bool:
         return False
 
 
-def _await_inactive(page: Page, selector: str, *, timeout_ms: int = 20_000) -> None:
+def _await_inactive(
+    page: Page, selector: str, *, focusable: bool = True, timeout_ms: int = 20_000
+) -> None:
     """Wait until ``selector`` stops being the active control.
 
     Waiting for it to become *hidden* never succeeds -- the pane stays in the
@@ -150,7 +164,7 @@ def _await_inactive(page: Page, selector: str, *, timeout_ms: int = 20_000) -> N
     try:
         page.wait_for_function(
             f"(a) => {{ const f = {_ACTIVE_JS}; return !f(a); }}",
-            arg=[selector, True],
+            arg=[selector, focusable],
             timeout=timeout_ms,
         )
     except Exception:  # noqa: BLE001 - the loop re-checks anyway
@@ -219,6 +233,43 @@ def _choose_account_tile(page: Page, username: str) -> bool:
     return False
 
 
+def _choose_code_method(page: Page) -> bool:
+    """Answer Entra's method picker with "use a verification code".
+
+    Matched on the proof type first and the label second, because the tenant
+    renders in Dutch. Every other method needs a phone, so a picker without
+    the code option fails now rather than at the deadline.
+    """
+    if not _is_active(page, SEL_METHOD_PICKER, focusable=False):
+        return False
+    offered = []
+    by_label = None
+    for option in page.query_selector_all(SEL_METHOD_OPTION):
+        try:
+            if not option.is_visible():
+                continue
+            value = option.get_attribute("data-value") or ""
+            label = (option.inner_text() or "").lower()
+        except Exception:  # noqa: BLE001 - element re-rendered under us
+            continue
+        if value == CODE_METHOD:
+            option.click()
+            logger.info("entra: chose the verification-code method")
+            return True
+        if by_label is None and any(word in label for word in CODE_METHOD_LABELS):
+            by_label = option
+        offered.append(value or "?")
+    if by_label is not None:
+        by_label.click()
+        logger.info("entra: chose the verification-code method by its label")
+        return True
+    # Proof types only: a label can carry part of a phone number.
+    raise EntraLoginError(
+        "Entra asked which method to verify with and offered no verification code "
+        f"(offered: {', '.join(offered) or 'nothing it could read'})"
+    )
+
+
 def sign_in(page: Page, creds: Credentials, *, timeout_ms: int = 120_000) -> None:
     """Complete an interactive Entra sign-in on ``page``.
 
@@ -233,6 +284,7 @@ def sign_in(page: Page, creds: Credentials, *, timeout_ms: int = 120_000) -> Non
     deadline = time.monotonic() + timeout_ms / 1000
     typed_password = False
     last_state = None
+    recognised_at = time.monotonic()
 
     while time.monotonic() < deadline:
         if not on_microsoft_login(page):
@@ -265,6 +317,9 @@ def sign_in(page: Page, creds: Credentials, *, timeout_ms: int = 120_000) -> Non
                 typed_password = typed_password
                 _await_inactive(page, SEL_TOTP)
                 logger.info("entra: TOTP submitted")
+        elif _choose_code_method(page):
+            state = "method"
+            _await_inactive(page, SEL_METHOD_PICKER, focusable=False)
         elif _kmsi_button(page) is not None:
             state = "kmsi"
             page.click(SEL_KMSI_SUBMIT)
@@ -272,8 +327,16 @@ def sign_in(page: Page, creds: Credentials, *, timeout_ms: int = 120_000) -> Non
             page.wait_for_timeout(1500)
         else:
             state = "waiting"
+            if time.monotonic() - recognised_at > STALL_SECONDS:
+                raise EntraLoginError(
+                    f"sign-in stopped on a pane it does not recognise: {_pane_title(page)!r}, "
+                    f"password {'was' if typed_password else 'was not'} submitted, "
+                    f"at {page.url[:120]}"
+                )
             page.wait_for_timeout(1000)
 
+        if state != "waiting":
+            recognised_at = time.monotonic()
         logger.debug("entra: state=%s url=%s", state, page.url[:90])
         last_state = state
 
