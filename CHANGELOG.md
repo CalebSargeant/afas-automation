@@ -2,6 +2,21 @@
 
 <!-- version list -->
 
+## v1.4.1 (2026-11-06)
+
+### Bug Fixes
+
+- Answer Entra's method picker with the verification code
+  ([#28](https://github.com/CalebSargeant/afas-automation/pull/28),
+  [`72da603`](https://github.com/CalebSargeant/afas-automation/commit/72da6032d16e0b4cacef64bd3df59f81743f387c))
+
+### Documentation
+
+- Say the submit click runs on the live portal
+  ([#27](https://github.com/CalebSargeant/afas-automation/pull/27),
+  [`c4344d2`](https://github.com/CalebSargeant/afas-automation/commit/c4344d265edcd1aa419c98f7a57a6c632f78daff))
+
+
 ## v1.4.0 (2026-11-04)
 
 ### Features
