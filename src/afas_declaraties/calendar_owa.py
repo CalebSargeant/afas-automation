@@ -192,7 +192,7 @@ _PAGE_JS = """() => [location.hostname, location.pathname, document.title,
 
 
 def _describe(page, labels: list[str]) -> str:
-    """A page that did not read as a week, described without a word of calendar content."""
+    """The page a week was read from, described without a word of calendar content."""
     try:
         host, path, title, lang = page.evaluate(_PAGE_JS)
     except Exception:  # noqa: BLE001 - this only decorates a failure already being logged
