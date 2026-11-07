@@ -643,3 +643,28 @@ step. A picker without that option fails at once and names the proof types it
 did offer, never their labels, because a label can hold part of a phone number.
 Any pane the loop does not know fails after `STALL_SECONDS` with its title,
 instead of at the deadline.
+
+## Outlook sends the browser to sign-in after the page has loaded
+
+**Symptom.** Every week in a run logs `no events after first load`, then
+`cannot read the date-range header []`, and the run is degraded. The portal
+sign-in before it went normally and the mailbox itself is fine.
+
+**Cause.** Not proven yet. A sign-in pane, Outlook in another language and a
+changed Outlook all harvest no usable label, and the log said nothing that told
+them apart. What is known: `outlook.office.com` answers with a 302 to
+`outlook.cloud.microsoft`, and that page sends a browser without an Outlook
+session to Entra from script, after the load has finished. The portal's sign-in
+only carries over if Entra lets it through without asking, and a check made
+straight after `goto` sees Outlook, not the sign-in pane.
+
+**Fix.** `read_week` looks for the identity provider once the page has settled
+and hands it to `answer_sign_in`, the same state machine the portal sign-in
+uses. Every result line names the page: host, path, the first part of the title,
+`lang`, and how many labels looked like events or carried English dates. Never
+label text, because subjects and colleagues' names do not belong in a log. The
+next failure says which of the three it was.
+
+For offline checks: Playwright's `route` does not see the target of a redirect.
+Fulfilling a 302 to a sign-in URL sends that request to the real network, so
+fakes redirect from script instead.

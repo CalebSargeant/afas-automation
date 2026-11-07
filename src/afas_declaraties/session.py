@@ -53,6 +53,15 @@ def wait_until_settled(page: Page, host: str, *, timeout_ms: int = 60_000) -> No
         raise EntraLoginError(f"never settled on {host}; stuck at {page.url}") from exc
 
 
+def credentials(item: str, vault: str) -> Credentials:
+    """The sign-in held in 1Password as ``item``, fetched only when a sign-in needs it."""
+    return Credentials(
+        username=onepassword.get_field(item, "username", vault),
+        password=onepassword.get_field(item, "password", vault),
+        totp=lambda: onepassword.get_totp(item, vault),
+    )
+
+
 @contextlib.contextmanager
 def open_session(
     host: str,
@@ -89,14 +98,7 @@ def open_session(
                 if not allow_login:
                     raise EntraLoginError("no live session and sign-in was not permitted")
                 logger.info("no live session -- signing in")
-                sign_in(
-                    page,
-                    Credentials(
-                        username=onepassword.get_field(item, "username", vault),
-                        password=onepassword.get_field(item, "password", vault),
-                        totp=lambda: onepassword.get_totp(item, vault),
-                    ),
-                )
+                sign_in(page, credentials(item, vault))
             else:
                 logger.info("existing session accepted")
             wait_until_settled(page, host)

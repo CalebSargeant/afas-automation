@@ -21,8 +21,10 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Callable
 from datetime import date, timedelta
 
+from .entra import on_microsoft_login
 from .models import CalendarEvent
 
 logger = logging.getLogger(__name__)
@@ -182,6 +184,28 @@ def looks_like_event(label: str) -> bool:
     )
 
 
+#: Where the page is and what language it speaks. A sign-in pane, Outlook in
+#: another language and a changed Outlook all harvest no usable label, and only
+#: this tells them apart.
+_PAGE_JS = """() => [location.hostname, location.pathname, document.title,
+  document.documentElement.lang]"""
+
+
+def _describe(page, labels: list[str]) -> str:
+    """A page that did not read as a week, described without a word of calendar content."""
+    try:
+        host, path, title, lang = page.evaluate(_PAGE_JS)
+    except Exception:  # noqa: BLE001 - this only decorates a failure already being logged
+        host = path = title = lang = "?"
+    events = sum(looks_like_event(x) for x in labels)
+    english = sum(bool(_DATE_RE.search(x) or _RANGE_RE.search(x)) for x in labels)
+    # The title's first part names the view; the rest names the account.
+    return (
+        f"page {host}{path}, title {str(title).split(' - ')[0][:60]!r}, lang {lang!r}, "
+        f"{len(labels)} labels, {events} like events, {english} with English dates"
+    )
+
+
 def _settle(page, *, settle_ms: int, tries: int = 8) -> list[str]:
     """Poll until the event grid has actually rendered.
 
@@ -202,7 +226,14 @@ def _settle(page, *, settle_ms: int, tries: int = 8) -> list[str]:
     return labels
 
 
-def read_week(page, monday: date, *, settle_ms: int = 12_000, max_steps: int = 10):
+def read_week(
+    page,
+    monday: date,
+    *,
+    settle_ms: int = 12_000,
+    max_steps: int = 10,
+    answer_sign_in: Callable[[object], object] | None = None,
+):
     """Read one work week from OWA. Returns ``(events, degraded)``.
 
     Navigation is by clicking the calendar's own Previous/Next week control.
@@ -214,16 +245,26 @@ def read_week(page, monday: date, *, settle_ms: int = 12_000, max_steps: int = 1
     "missing data became a claim", so the rendered week is now verified against
     the requested one and a mismatch is reported as degraded, never as an empty
     week.
+
+    Outlook sends a browser it has no session for to Entra from the page itself,
+    after the load has finished, so a sign-in it wants shows only once the page
+    has settled. ``answer_sign_in`` completes it. Without one the week reads as
+    degraded, and the log names the sign-in page.
     """
     page.goto(WORKWEEK_URL, wait_until="domcontentloaded", timeout=90_000)
     labels = _settle(page, settle_ms=settle_ms)
+    if answer_sign_in is not None and on_microsoft_login(page):
+        logger.info("owa: Outlook asked for a sign-in (%s); signing in", _describe(page, labels))
+        answer_sign_in(page)
+        page.goto(WORKWEEK_URL, wait_until="domcontentloaded", timeout=90_000)
+        labels = _settle(page, settle_ms=settle_ms)
     if not any(looks_like_event(x) for x in labels):
         # On a freshly created profile the calendar chrome renders but the event
         # grid stays empty however long it is given. One reload populates it.
         # Without this a cold run -- which is every run in the cluster, because
         # the pod's profile is ephemeral -- sees an empty calendar and would
         # classify the whole window as working-from-home.
-        logger.info("owa: no events after first load; reloading once")
+        logger.info("owa: no events after first load (%s); reloading once", _describe(page, labels))
         page.reload(wait_until="domcontentloaded", timeout=90_000)
         _settle(page, settle_ms=settle_ms)
 
@@ -232,14 +273,21 @@ def read_week(page, monday: date, *, settle_ms: int = 12_000, max_steps: int = 1
     for _ in range(max_steps + 1):
         current = rendered_week(page)
         if current is None:
-            header = [x for x in page.evaluate(_HARVEST_JS) if _HEADER_HINT.search(x)]
+            seen = page.evaluate(_HARVEST_JS)
+            header = [x for x in seen if _HEADER_HINT.search(x)]
             if reloaded:
                 logger.error(
-                    "owa: cannot read the date-range header %s; refusing to guess the week", header
+                    "owa: cannot read the date-range header %s (%s); refusing to guess the week",
+                    header,
+                    _describe(page, seen),
                 )
                 return [], True
             # The grid can render while the header does not, and a fresh load brings it back.
-            logger.warning("owa: cannot read the date-range header %s; reloading once", header)
+            logger.warning(
+                "owa: cannot read the date-range header %s (%s); reloading once",
+                header,
+                _describe(page, seen),
+            )
             page.reload(wait_until="domcontentloaded", timeout=90_000)
             _settle(page, settle_ms=settle_ms)
             reloaded = True
@@ -273,15 +321,17 @@ def read_week(page, monday: date, *, settle_ms: int = 12_000, max_steps: int = 1
     degraded = bool(labels) and failures == len(labels)
     if degraded:
         logger.error(
-            "owa: %d labels harvested, none parsed -- label format may have changed", failures
+            "owa: %d labels harvested, none parsed -- label format may have changed (%s)",
+            failures,
+            _describe(page, labels),
         )
 
     logger.info(
-        "owa: week %s (rendered %s..%s) -> %d events (%d labels, %d unparsed)",
+        "owa: week %s (rendered %s..%s) -> %d events, %d unparsed (%s)",
         monday,
         *current,
         len(in_week),
-        len(labels),
         failures,
+        _describe(page, labels),
     )
     return in_week, degraded

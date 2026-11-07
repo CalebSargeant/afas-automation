@@ -5,6 +5,7 @@ fail loudly -- it reads a different week's events and classifies real office
 days as working-from-home.
 """
 
+import logging
 from datetime import date
 
 from afas_declaraties.calendar_owa import looks_like_event, read_week, rendered_week
@@ -118,3 +119,65 @@ def test_losing_the_header_once_the_week_is_verified_does_not_crash():
     events, degraded = read_week(HeaderLeaves([HEADER, EVENT]), MONDAY)
     assert not degraded
     assert [e.day for e in events] == [MONDAY]
+
+
+class NotTheCalendar(CalendarPage):
+    """A page with neither events nor a header, however often it is reloaded."""
+
+    def __init__(self, labels, where):
+        super().__init__(labels, after_reload=labels)
+        self._where = where
+
+    def evaluate(self, js):
+        return self._where if "location.hostname" in js else super().evaluate(js)
+
+
+def test_a_week_it_cannot_read_says_what_was_on_screen(caplog):
+    """The live failure logged an empty header list and nothing else, so a
+    sign-in pane, Outlook in another language and a changed Outlook all read
+    the same. The page is named; its calendar content is not."""
+    dutch = "Overleg, hele dag, maandag 31 augustus 2026, Door Iemand, Vrij"
+    where = ["outlook.office.com", "/calendar/view/workweek", "Agenda - Iemand - Outlook", "nl-NL"]
+    with caplog.at_level(logging.INFO):
+        assert read_week(NotTheCalendar([dutch], where), MONDAY) == ([], True)
+    for line in ("no events after first load", "reloading once", "refusing to guess"):
+        record = next(r.getMessage() for r in caplog.records if line in r.getMessage())
+        assert "page outlook.office.com/calendar/view/workweek" in record
+        assert "title 'Agenda', lang 'nl-NL'" in record
+        assert "1 labels, 0 like events, 0 with English dates" in record
+    assert "Overleg" not in caplog.text
+    assert "Iemand" not in caplog.text
+
+
+SIGN_IN = "https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id=x"
+
+
+class SessionDidNotCarryOver(CalendarPage):
+    """Outlook hands every load to the identity provider until someone signs in."""
+
+    def __init__(self):
+        super().__init__([], after_reload=[])
+        self.url = SIGN_IN
+
+    def goto(self, url, **_kwargs):
+        if self.url != SIGN_IN:
+            self.url, self._labels = url, [HEADER, EVENT]
+
+
+def test_a_sign_in_on_the_way_to_outlook_is_answered():
+    page = SessionDidNotCarryOver()
+    answered = []
+
+    def answer(p):
+        answered.append(p)
+        p.url = "https://outlook.cloud.microsoft/"
+
+    events, degraded = read_week(page, MONDAY, answer_sign_in=answer)
+    assert answered == [page]
+    assert not degraded
+    assert MONDAY in {e.day for e in events}
+    assert page.reloads == 0
+
+
+def test_without_a_way_to_sign_in_the_sign_in_page_is_degraded():
+    assert read_week(SessionDidNotCarryOver(), MONDAY) == ([], True)
