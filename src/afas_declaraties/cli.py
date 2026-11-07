@@ -18,6 +18,7 @@ from .alerts import alert, notify
 from .calendar_owa import read_week
 from .classify import ClassifierConfig, classify_day
 from .config import Config, ConfigError
+from .entra import sign_in
 from .insite import (
     ClaimLine,
     add_row,
@@ -29,7 +30,7 @@ from .insite import (
 )
 from .models import ClaimType, DayState, Verdict
 from .readback import position, read_lines
-from .session import open_session
+from .session import credentials, open_session
 from .slack_blocks import approval_card, weekly_digest
 
 logger = logging.getLogger("afas")
@@ -106,7 +107,11 @@ def _read_calendar(cfg: Config, start: date, end: date) -> tuple[list, bool]:
         degraded = False
         week = _monday(start)
         while week <= end:
-            week_events, week_degraded = read_week(page, week)
+            week_events, week_degraded = read_week(
+                page,
+                week,
+                answer_sign_in=lambda p: sign_in(p, credentials(cfg.op_item, cfg.op_vault)),
+            )
             events.extend(week_events)
             degraded = degraded or week_degraded
             week += timedelta(days=7)

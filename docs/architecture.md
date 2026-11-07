@@ -56,7 +56,10 @@ With `CALENDAR_SOURCE=owa` (the default):
    **and** off any transient callback path.
 3. `read_week()` navigates OWA's work-week view, harvests every element with a
    descriptive `aria-label`, and parses each one into a `CalendarEvent`. It
-   returns `(events, degraded)`.
+   returns `(events, degraded)`. If Outlook sends the browser to Entra instead,
+   which it does from the page once the load has finished, `sign_in()` answers
+   that too. Each week's log line names the page it read (host, path, title and
+   language), never an event.
 
 Either way:
 
