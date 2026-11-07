@@ -2,6 +2,21 @@
 
 <!-- version list -->
 
+## v1.4.2 (2026-11-07)
+
+### Bug Fixes
+
+- **calendar**: Answer a sign-in Outlook asks for, and name the page each week was read from
+  ([#29](https://github.com/CalebSargeant/afas-automation/pull/29),
+  [`8a98242`](https://github.com/CalebSargeant/afas-automation/commit/8a9824277876aa5432477265f280db091b119aa4))
+
+### Documentation
+
+- **calendar**: _describe also names a page that read fine
+  ([#29](https://github.com/CalebSargeant/afas-automation/pull/29),
+  [`8a98242`](https://github.com/CalebSargeant/afas-automation/commit/8a9824277876aa5432477265f280db091b119aa4))
+
+
 ## v1.4.1 (2026-11-06)
 
 ### Bug Fixes
