@@ -197,7 +197,7 @@ def test_a_draft_afas_does_not_show_fails_and_alerts(cfg, monkeypatch):
     assert store.upserts == [(2026, 9, ClaimType.COMMUTE, 1, "failed")]
     assert store.marked == [], "a day is only drafted once AFAS shows it"
     assert portal.cards == []
-    assert "Aanmaken geklikt" in portal.alerts[0]
+    assert "clicked Aanmaken" in portal.alerts[0]
 
 
 def test_days_already_in_afas_are_not_offered_again(cfg, monkeypatch):
@@ -266,7 +266,7 @@ def test_a_draft_that_differs_from_the_ledger_fails_loudly(cfg, monkeypatch):
     assert build(cfg) == 1
     assert portal.created == 0
     assert store.upserts == [(2026, 9, ClaimType.COMMUTE, 2, "failed")]
-    assert "klopt niet" in portal.alerts[0]
+    assert "does not match the ledger" in portal.alerts[0]
 
 
 def test_a_draft_the_app_did_not_make_makes_this_one_wait(cfg, monkeypatch):
@@ -311,7 +311,7 @@ def test_a_month_behind_the_apps_own_draft_waits_quietly(cfg, monkeypatch, state
     assert store.upserts == []
     assert portal.alerts == []
     assert len(told) == 1, "said once per open draft"
-    assert "commute 09/2026 wacht op commute 06/2026" in told[0]
+    assert "commute 09/2026 waits for commute 06/2026" in told[0]
 
 
 @pytest.mark.parametrize(

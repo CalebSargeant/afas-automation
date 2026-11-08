@@ -599,7 +599,7 @@ approved or rejected, which also covers cards already posted.
 
 **Symptom.** Days the digest showed as home or commute are back on `needs_input`
 with `calendar_degraded`, and the oldest of them never recovers. The claim card
-lists them under *Niet meegenomen* and nothing else says why.
+lists them under *Left out* and nothing else says why.
 
 **Cause.** Classify rewrites its whole 9-day window every night, and one degraded
 read turned every day in it into a question. The next good read healed the window,

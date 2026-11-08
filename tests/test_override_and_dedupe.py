@@ -287,7 +287,7 @@ def card_body(user="U1"):
 
 
 @pytest.mark.parametrize(
-    "action, said", [(slackd.APPROVE, "Goedgekeurd"), (slackd.REJECT, "Afgewezen")]
+    "action, said", [(slackd.APPROVE, "Approved"), (slackd.REJECT, "Rejected")]
 )
 def test_a_decision_swaps_only_the_buttons(app, action, said):
     """Approving once wiped the card, so the days it left out read as covered."""
@@ -296,7 +296,7 @@ def test_a_decision_swaps_only_the_buttons(app, action, said):
 
     (update,) = client.updated
     assert [b["type"] for b in update["blocks"]].count("actions") == 0
-    assert "Niet vastgelegd* (1): 02-09" in str(update["blocks"])
+    assert "Not recorded* (1): 02-09" in str(update["blocks"])
     assert said in update["blocks"][-1]["text"]["text"]
 
 

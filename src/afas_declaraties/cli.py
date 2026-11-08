@@ -70,7 +70,7 @@ def _no_lock() -> Iterator[bool]:
 
 def _lock_held(cfg: Config, command: str) -> int:
     """A skipped run is a failed run: on a monthly job it would lose a whole month."""
-    alert(cfg, f"`{command}` overgeslagen, een andere browser-job houdt de lock vast.")
+    alert(cfg, f"`{command}` skipped, another browser job holds the lock.")
     return 1
 
 
@@ -156,8 +156,8 @@ def cmd_classify(cfg: Config, args) -> int:
                 # Better to record nothing than to record "no bookings".
                 alert(
                     cfg,
-                    f"agenda niet leesbaar voor {start:%d-%m}..{end:%d-%m}. Besliste dagen "
-                    "blijven staan, nieuwe dagen staan op onbeslist.",
+                    f"calendar unreadable for {start:%d-%m}..{end:%d-%m}. Decided days stay "
+                    "as they are, new days are left undecided.",
                 )
 
             day = start
@@ -198,11 +198,11 @@ def cmd_digest(cfg: Config, args) -> int:
     with store.connect(cfg.database_url) as conn:
         rows = store.days_between(conn, start, start + timedelta(days=6))
     if not rows:
-        alert(cfg, f"geen enkele dag vastgelegd voor de week van {start:%d-%m-%Y}.")
+        alert(cfg, f"no days recorded for the week of {start:%d-%m-%Y}.")
         return 0
     _slack(cfg).chat_postMessage(
         channel=cfg.slack_channel,
-        text=f"Weekoverzicht {start:%d-%m-%Y}",
+        text=f"Weekly review {start:%d-%m-%Y}",
         blocks=weekly_digest(rows, week_start=start),
     )
     logger.info("digest: posted for week of %s (%d days)", start, len(rows))
@@ -241,10 +241,10 @@ def _post_card(
     if not cfg.slack_channel:
         return
     top_up = store.open_round(conn, year, period, claim_type) > 1
-    what = f"{claim_type.value} {period:02d}/{year}" + (" (aanvulling)" if top_up else "")
+    what = f"{claim_type.value} {period:02d}/{year}" + (" (top-up)" if top_up else "")
     _slack(cfg).chat_postMessage(
         channel=cfg.slack_channel,
-        text=f"Declaratie {what} klaar",
+        text=f"Claim {what} ready",
         blocks=approval_card(
             year=year,
             period=period,
@@ -275,7 +275,7 @@ def _plan_build(cfg: Config, conn, periods: list[tuple[int, int]]) -> list[tuple
                     cfg,
                     conn,
                     f"unresolved:{year}-{period}:{_dates(unresolved)}",
-                    f"{period:02d}/{year}: niets te declareren, deze dagen zijn nog onbeslist: "
+                    f"{period:02d}/{year}: nothing to claim, these days are still undecided: "
                     f"{_dates(unresolved)}.",
                 )
             continue
@@ -325,12 +325,12 @@ def _waits_for(label: str, claim_type: ClaimType, sub: dict) -> str:
     ahead = f"{claim_type.value} {sub['period_no']:02d}/{sub['period_year']}"
     if sub["state"] == "approved":
         return (
-            f"{label} wacht op {ahead}, dat is goedgekeurd. De eerstvolgende submit stuurt "
-            f"het in en de build daarna maakt {label} aan."
+            f"{label} waits for {ahead}, which is approved. The next submit sends it in "
+            f"and the build after that creates {label}."
         )
     return (
-        f"{label} wacht op {ahead}, dat op je goedkeuring wacht. Na goedkeuren stuurt de "
-        f"eerstvolgende submit het in en maakt de build daarna {label} aan."
+        f"{label} waits for {ahead}, which is waiting for your approval. Once approved, "
+        f"the next submit sends it in and the build after that creates {label}."
     )
 
 
@@ -347,8 +347,8 @@ def _build_one(cfg: Config, conn, page, year, period, claim_type, days) -> bool:
         store.mark_days_state(conn, pos.conflict, DayState.NEEDS_INPUT)
         alert(
             cfg,
-            f"{label}: {_dates(pos.conflict)} staan in AFAS met een ander type of een "
-            "onbekende status. Niet meegenomen, kijk in AFAS en corrigeer de dag.",
+            f"{label}: {_dates(pos.conflict)} are in AFAS with another type or an "
+            "unknown status. Left out, check AFAS and correct the day.",
         )
 
     todo = sorted(pos.draft + pos.absent)
@@ -370,9 +370,9 @@ def _build_one(cfg: Config, conn, page, year, period, claim_type, days) -> bool:
         this_period = [d for d in pos.other_drafts if store.period_for(d) == (year, period)]
         if this_period or (pos.draft and pos.absent):
             problem = (
-                f"{label}: het concept in AFAS klopt niet met het grootboek. Concept: "
-                f"{_dates(pos.draft + this_period)}, ontbreekt: {_dates(pos.absent)}. "
-                "Verwijder of herstel het concept in AFAS."
+                f"{label}: the draft in AFAS does not match the ledger. Draft: "
+                f"{_dates(pos.draft + this_period)}, missing: {_dates(pos.absent)}. "
+                "Delete or fix the draft in AFAS."
             )
             store.upsert_submission(
                 conn, year, period, claim_type, digest, len(todo), "failed", error=problem
@@ -398,8 +398,8 @@ def _build_one(cfg: Config, conn, page, year, period, claim_type, days) -> bool:
                 cfg,
                 conn,
                 f"blocked:{claim_type.value}:{_dates(pos.other_drafts)}",
-                f"{label} wacht: er staat al een open {claim_type.value}-concept in AFAS "
-                f"({_dates(pos.other_drafts)}). Stuur dat in of verwijder het.",
+                f"{label} waits: there is already an open {claim_type.value} draft in AFAS "
+                f"({_dates(pos.other_drafts)}). Submit or delete it.",
             )
             return False
         if pos.absent:
@@ -408,8 +408,8 @@ def _build_one(cfg: Config, conn, page, year, period, claim_type, days) -> bool:
             after = position(read_lines(page, cfg.insite_host, cfg.claims_page), claim_type, todo)
             if after.draft != todo:
                 problem = (
-                    f"{label}: Aanmaken geklikt, maar AFAS toont als concept "
-                    f"{_dates(after.draft) or 'niets'} in plaats van {_dates(todo)}."
+                    f"{label}: clicked Aanmaken, but AFAS shows "
+                    f"{_dates(after.draft) or 'nothing'} as the draft instead of {_dates(todo)}."
                 )
                 store.upsert_submission(
                     conn, year, period, claim_type, digest, len(todo), "failed", error=problem
@@ -457,8 +457,8 @@ def cmd_build(cfg: Config, args) -> int:
                     cfg,
                     conn,
                     f"empty:{due[0]}-{due[1]}",
-                    f"{due[1]:02d}/{due[0]} is aan de beurt en er staat geen enkele dag in het "
-                    "grootboek. Draait classify nog?",
+                    f"{due[1]:02d}/{due[0]} is due and the ledger holds no days for it. "
+                    "Is classify still running?",
                 )
 
         work = _plan_build(cfg, conn, periods)
@@ -481,7 +481,7 @@ def cmd_build(cfg: Config, args) -> int:
                         logger.exception("build: %s %02d/%d", claim_type.value, period, year)
                         alert(
                             cfg,
-                            f"`build` {claim_type.value} {period:02d}/{year} mislukt: "
+                            f"`build` {claim_type.value} {period:02d}/{year} failed: "
                             f"{type(exc).__name__}: {str(exc)[:300]}",
                         )
                         ok = False
@@ -513,8 +513,8 @@ def _record_filed(cfg: Config, conn, year, period, claim_type, days) -> None:
     logger.info("submit: %s %02d/%d filed (%d days)", claim_type.value, period, year, len(days))
     notify(
         cfg,
-        f":white_check_mark: AFAS bevestigt {claim_type.value} {period:02d}/{year}: "
-        f"{len(days)} regel(s) staan bij de leidinggevende: {_dates(days)}.",
+        f":white_check_mark: AFAS confirms {claim_type.value} {period:02d}/{year}: "
+        f"{len(days)} line(s) are with the manager: {_dates(days)}.",
     )
 
 
@@ -541,20 +541,20 @@ def _settle(cfg: Config, conn, page, row: dict) -> bool:
             error="click did not land",
             digest=store.lines_digest(days, claim_type),
         )
-        alert(cfg, f"{label}: insturen is niet aangekomen, het staat nog als concept in AFAS.")
+        alert(cfg, f"{label}: the submit did not land, it is still a draft in AFAS.")
         return False
     if days and pos.absent == sorted(days):
         store.set_submission_state(
             conn, year, period, claim_type, "failed", error="draft gone from AFAS"
         )
-        alert(cfg, f"{label}: het concept is weg uit AFAS. De volgende build maakt het opnieuw.")
+        alert(cfg, f"{label}: the draft is gone from AFAS. The next build creates it again.")
         return False
     # A rejection lands here too. The next build reads AFAS again and clicks nothing
     # without a new approval, so `failed` is safe and this stops repeating every day.
     problem = (
-        f"{label}: onduidelijke staat, kijk in AFAS. Ingestuurd: {_dates(pos.filed)}, "
-        f"concept: {_dates(pos.draft)}, ontbreekt: {_dates(pos.absent)}, "
-        f"anders: {_dates(pos.conflict)}."
+        f"{label}: unclear state, check AFAS. Submitted: {_dates(pos.filed)}, "
+        f"draft: {_dates(pos.draft)}, missing: {_dates(pos.absent)}, "
+        f"other: {_dates(pos.conflict)}."
     )
     store.set_submission_state(conn, year, period, claim_type, "failed", error=problem[:400])
     alert(cfg, problem)
@@ -578,8 +578,7 @@ def _still_as_approved(cfg: Config, conn, row: dict) -> bool:
     )
     alert(
         cfg,
-        f"{claim_type.value} {period:02d}/{year}: geweigerd, "
-        "de dagen zijn veranderd na de goedkeuring.",
+        f"{claim_type.value} {period:02d}/{year}: refused, the days changed after the approval.",
     )
     return False
 
@@ -600,10 +599,10 @@ def _file(cfg: Config, conn, page, row: dict) -> bool:
         # What was approved is no longer there, so the approval goes with it. Left
         # standing, `build` would skip this row and nothing could ever move it.
         problem = (
-            f"{label}: het concept in AFAS klopt niet met wat is goedgekeurd. "
-            f"Concept: {_dates(pos.draft)}, ingestuurd: {_dates(pos.filed)}, "
-            f"ontbreekt: {_dates(pos.absent)}, anders: {_dates(pos.conflict)}. "
-            "De volgende build maakt een nieuwe kaart."
+            f"{label}: the draft in AFAS does not match what was approved. "
+            f"Draft: {_dates(pos.draft)}, submitted: {_dates(pos.filed)}, "
+            f"missing: {_dates(pos.absent)}, other: {_dates(pos.conflict)}. "
+            "The next build posts a new card."
         )
         store.set_submission_state(conn, year, period, claim_type, "failed", error=problem)
         alert(cfg, problem)
@@ -611,8 +610,8 @@ def _file(cfg: Config, conn, page, row: dict) -> bool:
     if pos.other_drafts:
         # The approved draft is intact, so the approval stands and tomorrow's run looks again.
         problem = (
-            f"{label}: er staat nog een open concept in AFAS ({_dates(pos.other_drafts)}) en de "
-            "takenlijst kan ze niet uit elkaar houden. Stuur dat in of verwijder het."
+            f"{label}: there is another open draft in AFAS ({_dates(pos.other_drafts)}) and "
+            "the task list cannot tell them apart. Submit or delete it."
         )
         store.set_submission_state(conn, year, period, claim_type, "approved", error=problem)
         alert(cfg, problem)
@@ -630,14 +629,14 @@ def _file(cfg: Config, conn, page, row: dict) -> bool:
         store.set_submission_state(
             conn, year, period, claim_type, "needs_reconciliation", error=str(exc)[:400]
         )
-        alert(cfg, f"{label}: insturen onderbroken, kijk in AFAS: {str(exc)[:300]}")
+        alert(cfg, f"{label}: submit interrupted, check AFAS: {str(exc)[:300]}")
         return False
 
     if after.filed != sorted(days):
         problem = (
-            f"{label}: insturen geklikt, maar AFAS bevestigt het niet. Ingestuurd: "
-            f"{_dates(after.filed)}, concept: {_dates(after.draft)}, "
-            f"ontbreekt: {_dates(after.absent)}."
+            f"{label}: clicked submit, but AFAS does not confirm it. Submitted: "
+            f"{_dates(after.filed)}, draft: {_dates(after.draft)}, "
+            f"missing: {_dates(after.absent)}."
         )
         store.set_submission_state(
             conn, year, period, claim_type, "needs_reconciliation", error=problem[:400]
@@ -687,8 +686,8 @@ def cmd_submit(cfg: Config, args) -> int:
                 store.set_submission_state(conn, year, period, claim_type, "drafted")
                 notify(
                     cfg,
-                    f":test_tube: DRY RUN: {claim_type.value} {period:02d}/{year} goedgekeurd, "
-                    "er is niets ingestuurd.",
+                    f":test_tube: DRY RUN: {claim_type.value} {period:02d}/{year} approved, "
+                    "nothing was submitted.",
                 )
             rows = []
 
@@ -715,7 +714,7 @@ def cmd_submit(cfg: Config, args) -> int:
 
 def _terminated(cfg: Config, command: str) -> None:
     """A deadline or a drain kills the pod with no exception to catch."""
-    alert(cfg, f"`{command}` is afgebroken (deadline of node weg). Kijk of AFAS klopt.")
+    alert(cfg, f"`{command}` was stopped (deadline or node gone). Check that AFAS is right.")
     os._exit(143)
 
 
@@ -773,7 +772,7 @@ def main(argv: list[str] | None = None) -> int:
         return args.func(cfg, args)
     except Exception as exc:  # noqa: BLE001
         logger.exception("%s failed", args.command)
-        alert(cfg, f"`{args.command}` is gecrasht: {type(exc).__name__}: {str(exc)[:300]}")
+        alert(cfg, f"`{args.command}` crashed: {type(exc).__name__}: {str(exc)[:300]}")
         return 1
 
 

@@ -235,7 +235,7 @@ def test_a_digest_that_moved_since_approval_is_refused(cfg, monkeypatch, no_brow
     assert store.states == [
         (2026, 8, ClaimType.COMMUTE, "awaiting_approval", "digest changed after approval")
     ]
-    assert "veranderd" in alerts[0]
+    assert "changed after the approval" in alerts[0]
 
 
 def test_an_explicit_period_only_files_that_period(cfg, monkeypatch, alerts):
@@ -261,7 +261,7 @@ def test_a_dry_run_opens_no_browser_and_says_nothing_was_filed(cfg, monkeypatch,
 
     assert cli.cmd_submit(cfg, args()) == 0
     assert states(store) == [(2026, 8, "drafted")]
-    assert "niets ingestuurd" in said[0]
+    assert "nothing was submitted" in said[0]
 
 
 def test_a_click_afas_does_not_confirm_is_not_a_filing(cfg, monkeypatch, alerts):
@@ -273,7 +273,7 @@ def test_a_click_afas_does_not_confirm_is_not_a_filing(cfg, monkeypatch, alerts)
     assert cli.cmd_submit(cfg, args()) == 1
     assert states(store) == [(2026, 8, "in_flight"), (2026, 8, "needs_reconciliation")]
     assert store.marked == []
-    assert "bevestigt het niet" in alerts[0]
+    assert "does not confirm it" in alerts[0]
 
 
 def test_a_crash_after_the_state_write_goes_to_reconciliation(cfg, monkeypatch, alerts):
@@ -299,7 +299,7 @@ def test_a_draft_that_does_not_match_is_never_clicked(cfg, monkeypatch, alerts):
     assert cli.cmd_submit(cfg, args()) == 1
     assert portal.clicks == 0
     assert states(store) == [(2026, 8, "failed")], "left approved, build would skip it for good"
-    assert "klopt niet" in alerts[0]
+    assert "does not match what was approved" in alerts[0]
 
 
 def test_another_open_draft_blocks_filing(cfg, monkeypatch, alerts):

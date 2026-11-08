@@ -21,9 +21,9 @@ CORRECT = "open_corrections"
 MODAL_CALLBACK = "day_corrections"
 
 _CHOICES = [
-    ("office", "Kantoor (woon-werk)"),
-    ("home", "Thuis"),
-    ("absent", "Verlof / niet gewerkt"),
+    ("office", "Office (commute)"),
+    ("home", "Home"),
+    ("absent", "Leave / not worked"),
 ]
 
 
@@ -58,17 +58,17 @@ def approval_card(
 
     A top-up carries days that came after the month was filed, as a declaration of its own.
     """
-    label = "woon-werk" if claim_type is ClaimType.COMMUTE else "thuiswerkdagen"
-    day_lines = "\n".join(f"• {d.strftime('%a %d-%m-%Y')}" for d in days) or "_geen dagen_"
-    title = f"Declaratie {label} — {period:02d}/{year}" + (" (aanvulling)" if top_up else "")
+    label = "commute" if claim_type is ClaimType.COMMUTE else "work-from-home"
+    day_lines = "\n".join(f"• {d.strftime('%a %d-%m-%Y')}" for d in days) or "_no days_"
+    title = f"{label.capitalize()} claim — {period:02d}/{year}" + (" (top-up)" if top_up else "")
 
     blocks: list[dict] = [
         {"type": "header", "text": {"type": "plain_text", "text": title}},
         {
             "type": "section",
             "fields": [
-                {"type": "mrkdwn", "text": f"*Dagen*\n{len(days)}"},
-                {"type": "mrkdwn", "text": f"*Periode*\n{period:02d}/{year}"},
+                {"type": "mrkdwn", "text": f"*Days*\n{len(days)}"},
+                {"type": "mrkdwn", "text": f"*Period*\n{period:02d}/{year}"},
             ],
         },
         {"type": "section", "text": {"type": "mrkdwn", "text": day_lines}},
@@ -83,8 +83,8 @@ def approval_card(
                 "type": "section",
                 "text": {
                     "type": "mrkdwn",
-                    "text": f":warning: *Niet meegenomen* ({len(unresolved)}): {missing}\n"
-                    "_Deze dagen zijn onbeslist gebleven en worden niet gedeclareerd._",
+                    "text": f":warning: *Left out* ({len(unresolved)}): {missing}\n"
+                    "_These days were never decided and will not be claimed._",
                 },
             }
         )
@@ -92,12 +92,12 @@ def approval_card(
     for icon, title, listed, note in (
         (
             ":warning:",
-            "Niet vastgelegd",
+            "Not recorded",
             unrecorded,
-            "Geen thuis- of kantoordag bekend, dus niet gedeclareerd.",
+            "Not known as a home or office day, so not claimed.",
         ),
-        (":white_check_mark:", "Al in AFAS", already, "Niet nog een keer op deze declaratie."),
-        (":warning:", "Open concept in AFAS", open_drafts, "Blokkeert insturen van dit type."),
+        (":white_check_mark:", "Already in AFAS", already, "Not claimed again on this card."),
+        (":warning:", "Open draft in AFAS", open_drafts, "Blocks submitting this claim type."),
     ):
         if listed:
             names = ", ".join(d.strftime("%d-%m") for d in listed)
@@ -117,7 +117,7 @@ def approval_card(
             "elements": [
                 {
                     "type": "mrkdwn",
-                    "text": f"digest `{digest}` · {'DRY RUN — er wordt niets ingediend' if dry_run else 'Goedkeuren dient de declaratie definitief in'}",
+                    "text": f"digest `{digest}` · {'DRY RUN — nothing will be submitted' if dry_run else 'Approving submits the claim for good'}",
                 }
             ],
         }
@@ -127,7 +127,7 @@ def approval_card(
     correct = {
         "type": "button",
         "action_id": CORRECT,
-        "text": {"type": "plain_text", "text": "Dagen corrigeren"},
+        "text": {"type": "plain_text", "text": "Correct days"},
         "value": value,
     }
     # A rehearsal holds nothing to decide on, and a decision on one must not outlive
@@ -145,24 +145,24 @@ def approval_card(
                     "type": "button",
                     "action_id": APPROVE,
                     "style": "primary",
-                    "text": {"type": "plain_text", "text": "Goedkeuren en insturen"},
+                    "text": {"type": "plain_text", "text": "Approve and submit"},
                     "value": value,
                     "confirm": {
-                        "title": {"type": "plain_text", "text": "Definitief insturen?"},
+                        "title": {"type": "plain_text", "text": "Submit for good?"},
                         "text": {
                             "type": "mrkdwn",
-                            "text": f"*{len(days)}* dagen {label} voor periode {period:02d}/{year}. "
-                            "Dit is onomkeerbaar en gaat naar je leidinggevende.",
+                            "text": f"*{len(days)}* {label} days for period {period:02d}/{year}. "
+                            "This cannot be undone and goes to your manager.",
                         },
-                        "confirm": {"type": "plain_text", "text": "Insturen"},
-                        "deny": {"type": "plain_text", "text": "Annuleren"},
+                        "confirm": {"type": "plain_text", "text": "Submit"},
+                        "deny": {"type": "plain_text", "text": "Cancel"},
                     },
                 },
                 {
                     "type": "button",
                     "action_id": REJECT,
                     "style": "danger",
-                    "text": {"type": "plain_text", "text": "Afwijzen"},
+                    "text": {"type": "plain_text", "text": "Reject"},
                     "value": value,
                 },
                 correct,
@@ -191,20 +191,20 @@ def weekly_digest(rows: list[dict], *, week_start: date) -> list[dict]:
     for r in settled:
         lines.append(
             f"{icon.get(r['claim_type'], ':grey_question:')} "
-            f"{r['day'].strftime('%a %d-%m')} — {r['claim_type'] or 'niets'}"
+            f"{r['day'].strftime('%a %d-%m')} — {r['claim_type'] or 'nothing'}"
         )
 
     blocks: list[dict] = [
         {
             "type": "header",
-            "text": {"type": "plain_text", "text": f"Week van {week_start.strftime('%d-%m-%Y')}"},
+            "text": {"type": "plain_text", "text": f"Week of {week_start.strftime('%d-%m-%Y')}"},
         },
-        {"type": "section", "text": {"type": "mrkdwn", "text": "\n".join(lines) or "_geen dagen_"}},
+        {"type": "section", "text": {"type": "mrkdwn", "text": "\n".join(lines) or "_no days_"}},
     ]
 
     if needs:
         detail = "\n".join(
-            f"• *{r['day'].strftime('%a %d-%m')}* — {', '.join(r.get('reasons') or []) or 'onbekend'}"
+            f"• *{r['day'].strftime('%a %d-%m')}* — {', '.join(r.get('reasons') or []) or 'unknown'}"
             for r in needs
         )
         blocks.append(
@@ -212,7 +212,7 @@ def weekly_digest(rows: list[dict], *, week_start: date) -> list[dict]:
                 "type": "section",
                 "text": {
                     "type": "mrkdwn",
-                    "text": f":question: *Onbeslist — deze vervallen als je niets doet*\n{detail}",
+                    "text": f":question: *Undecided — not claimed unless you answer*\n{detail}",
                 },
             }
         )
@@ -225,7 +225,7 @@ def weekly_digest(rows: list[dict], *, week_start: date) -> list[dict]:
                 {
                     "type": "button",
                     "action_id": CORRECT,
-                    "text": {"type": "plain_text", "text": "Dagen corrigeren"},
+                    "text": {"type": "plain_text", "text": "Correct days"},
                     "value": f"week{SEP}{week_start.isoformat()}",
                 }
             ],
@@ -261,9 +261,9 @@ def corrections_modal(days: list[dict], *, private_metadata: str) -> dict:
         "type": "modal",
         "callback_id": MODAL_CALLBACK,
         "private_metadata": private_metadata,
-        "title": {"type": "plain_text", "text": "Dagen corrigeren"},
-        "submit": {"type": "plain_text", "text": "Opslaan"},
-        "close": {"type": "plain_text", "text": "Annuleren"},
+        "title": {"type": "plain_text", "text": "Correct days"},
+        "submit": {"type": "plain_text", "text": "Save"},
+        "close": {"type": "plain_text", "text": "Cancel"},
         "blocks": blocks
-        or [{"type": "section", "text": {"type": "mrkdwn", "text": "_Niets te corrigeren._"}}],
+        or [{"type": "section", "text": {"type": "mrkdwn", "text": "_Nothing to correct._"}}],
     }

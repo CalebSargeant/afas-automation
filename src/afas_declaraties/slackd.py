@@ -94,7 +94,7 @@ def build_app(cfg: Config) -> App:
 
         if not authorised(user):
             client.chat_postEphemeral(
-                channel=channel, user=user, text="Je staat niet op de goedkeurderslijst."
+                channel=channel, user=user, text="You are not on the approver list."
             )
             logger.warning("slackd: unauthorised approval attempt by %s", user)
             return
@@ -107,7 +107,7 @@ def build_app(cfg: Config) -> App:
         except ValueError:
             logger.error("slackd: malformed decision value %r", raw)
             client.chat_postEphemeral(
-                channel=channel, user=user, text="Ongeldige knopwaarde; niets gedaan."
+                channel=channel, user=user, text="Invalid button value; nothing done."
             )
             return
 
@@ -117,7 +117,7 @@ def build_app(cfg: Config) -> App:
         if ok:
             # Buttons are removed on any terminal decision so a stale card can
             # never be clicked a second time. The rest of the card stays.
-            outcome = f":white_check_mark: Goedgekeurd door <@{user}> — {message}"
+            outcome = f":white_check_mark: Approved by <@{user}> — {message}"
             client.chat_update(
                 channel=channel,
                 ts=ts,
@@ -125,11 +125,11 @@ def build_app(cfg: Config) -> App:
                 blocks=decided_card(body["message"].get("blocks") or [], outcome),
             )
             client.chat_postMessage(
-                channel=channel, thread_ts=ts, text="Wordt ingestuurd bij de volgende submit-run."
+                channel=channel, thread_ts=ts, text="Goes to AFAS with the next submit run."
             )
         else:
             client.chat_postEphemeral(
-                channel=channel, user=user, text=f":warning: Niet goedgekeurd: {message}"
+                channel=channel, user=user, text=f":warning: Not approved: {message}"
             )
 
     @app.action(REJECT)
@@ -141,7 +141,7 @@ def build_app(cfg: Config) -> App:
             client.chat_postEphemeral(
                 channel=body["channel"]["id"],
                 user=user,
-                text="Je staat niet op de goedkeurderslijst.",
+                text="You are not on the approver list.",
             )
             return
         if not once(body, "reject", user):
@@ -153,10 +153,10 @@ def build_app(cfg: Config) -> App:
             client.chat_postEphemeral(
                 channel=body["channel"]["id"],
                 user=user,
-                text=":warning: Niet afgewezen: deze declaratie wacht niet meer op een beslissing.",
+                text=":warning: Not rejected: this claim is no longer waiting for a decision.",
             )
             return
-        outcome = f":x: Afgewezen door <@{user}>. Er wordt niets ingediend."
+        outcome = f":x: Rejected by <@{user}>. Nothing will be submitted."
         client.chat_update(
             channel=body["channel"]["id"],
             ts=body["message"]["ts"],
@@ -179,7 +179,7 @@ def build_app(cfg: Config) -> App:
             client.chat_postEphemeral(
                 channel=body["channel"]["id"],
                 user=user,
-                text="Je staat niet op de goedkeurderslijst.",
+                text="You are not on the approver list.",
             )
             return
         raw = body["actions"][0]["value"]
@@ -202,12 +202,12 @@ def build_app(cfg: Config) -> App:
         if not authorised(user):
             ack(
                 response_action="errors",
-                errors={list(view["state"]["values"])[0]: "Je mag geen dagen corrigeren."},
+                errors={list(view["state"]["values"])[0]: "You may not correct days."},
             )
             return
         if not once(body, "correct", user):
             # Re-applying the same overrides would land the same values, but the
-            # channel would get a second "N dagen bijgewerkt" and the ledger a
+            # channel would get a second "N day(s) updated" and the ledger a
             # second overridden_at. Same guard as the approval path.
             ack()
             logger.info("slackd: duplicate corrections delivery ignored")
@@ -229,9 +229,9 @@ def build_app(cfg: Config) -> App:
                 claim = _CHOICE_TO_CLAIM[selected["value"]]
                 (applied if store.apply_override(conn, day, claim, user) else refused).append(day)
 
-        summary = f"{len(applied)} dag(en) bijgewerkt door <@{user}>."
+        summary = f"{len(applied)} day(s) updated by <@{user}>."
         if refused:
-            summary += " Niet gewijzigd (al ingediend): " + ", ".join(
+            summary += " Not changed (already submitted): " + ", ".join(
                 d.strftime("%d-%m") for d in refused
             )
         client.chat_postMessage(channel=cfg.slack_channel, text=summary)
