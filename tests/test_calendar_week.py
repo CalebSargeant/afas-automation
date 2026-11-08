@@ -8,7 +8,7 @@ days as working-from-home.
 import logging
 from datetime import date
 
-from afas_declaraties.calendar_owa import looks_like_event, read_week, rendered_week
+from afas_declaraties.calendar_owa import label_shape, looks_like_event, read_week, rendered_week
 
 
 class FakePage:
@@ -181,3 +181,33 @@ def test_a_sign_in_on_the_way_to_outlook_is_answered():
 
 def test_without_a_way_to_sign_in_the_sign_in_page_is_degraded():
     assert read_week(SessionDidNotCarryOver(), MONDAY) == ([], True)
+
+
+def test_a_label_shape_keeps_the_structure_and_drops_the_content():
+    label = (
+        "Daily standup, 8:45 AM to 9:30 AM, Monday, August 31, 2026, "
+        "By A Colleague, Busy, Recurring event"
+    )
+    assert label_shape(label) == (
+        "w, 9:99 AM to 9:99 AM, Monday, August 99, 9999, By w, Busy, Recurring event"
+    )
+
+
+def test_each_week_says_what_its_unparsed_and_stray_labels_were(caplog):
+    """A bare unparsed count cannot tell a missed event from page chrome. The
+    week names each kind by shape, never by content."""
+    day_first = "Standup, 8:45 AM to 9:30 AM, Monday, 31 August 2026, By A Colleague, Busy"
+    chrome = "Mailbox Someone 2026 overview"
+    page = CalendarPage([NAV_PREV, HEADER, NAV_NEXT, EVENT, day_first, chrome])
+    with caplog.at_level(logging.INFO):
+        events, degraded = read_week(page, MONDAY)
+    assert not degraded
+    assert MONDAY in {e.day for e in events}
+    warning = next(r for r in caplog.records if r.levelno == logging.WARNING).getMessage()
+    assert "1 labels look like events but carry no date it can read" in warning
+    assert "'w, 9:99 AM to 9:99 AM, Monday, 99 August 9999, By w, Busy'" in warning
+    line = next(r.getMessage() for r in caplog.records if "-> 2 events" in r.getMessage())
+    assert "(1 not event-shaped ['August 99 – September 9, 9999, Jump to w specific" in line
+    assert "unparsed: 2 date ranges, 1 event-like, 1 other ['w 9999 w']" in line
+    for content in ("Standup", "Colleague", "Mailbox", "Someone", "Booking", "deskbird"):
+        assert content not in caplog.text, content

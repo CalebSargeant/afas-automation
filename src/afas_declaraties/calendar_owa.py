@@ -206,6 +206,37 @@ def _describe(page, labels: list[str]) -> str:
     )
 
 
+#: Words that describe a label's structure rather than its content. Everything
+#: else, subjects and people's names included, is written as ``w``.
+_SHAPE_WORDS = {
+    *_MONTHS,
+    *("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"),
+    *("am", "pm", "to", "from", "all", "day", "event", "by", "me", "recurring"),
+    *("free", "busy", "tentative", "away", "working", "elsewhere", "canceled", "cancelled"),
+    *("today", "tomorrow", "yesterday", "jump", "specific", "date", "range", "go", "previous"),
+    *("next", "week"),
+}
+_TOKEN_RE = re.compile(r"[^\W\d_]+|\d+")
+_WORD_RUN_RE = re.compile(r"\bw(?:\s+w\b)+")
+
+
+def _shape_token(m: re.Match) -> str:
+    tok = m.group(0)
+    if tok.isdigit():
+        return "9" * min(len(tok), 4)
+    return tok if tok.lower() in _SHAPE_WORDS else "w"
+
+
+def label_shape(label: str, limit: int = 100) -> str:
+    """A label's structure without its content, e.g. ``w, 9:99 AM to 9:99 AM, Monday, ...``."""
+    shape = _WORD_RUN_RE.sub("w", _TOKEN_RE.sub(_shape_token, label))
+    return " ".join(shape.split())[:limit]
+
+
+def _shapes(labels: list[str], most: int = 5) -> list[str]:
+    return sorted({label_shape(x) for x in labels})[:most]
+
+
 def _settle(page, *, settle_ms: int, tries: int = 8) -> list[str]:
     """Poll until the event grid has actually rendered.
 
@@ -306,32 +337,53 @@ def read_week(
         return [], True
 
     labels = _settle(page, settle_ms=settle_ms)
-    events, failures = [], 0
+    events, parsed, unparsed = [], [], []
     for label in labels:
         try:
             events.append(parse_event_label(label))
+            parsed.append(label)
         except LabelParseError:
-            failures += 1
+            unparsed.append(label)
 
     week = {monday + timedelta(days=i) for i in range(7)}
     in_week = [e for e in events if e.day in week]
 
     # Every harvested label failing to parse means the label format moved, not
     # that the week was empty.
-    degraded = bool(labels) and failures == len(labels)
+    degraded = bool(labels) and len(unparsed) == len(labels)
     if degraded:
         logger.error(
             "owa: %d labels harvested, none parsed -- label format may have changed (%s)",
-            failures,
+            len(unparsed),
             _describe(page, labels),
         )
 
+    # Parsing is deliberately permissive: a stray label read as an event cannot
+    # make a claim, and a strict parser that dropped an absence could. Shapes
+    # say what the strays and the unparsed labels were without their content.
+    stray = [x for x in parsed if not looks_like_event(x)]
+    ranges = [x for x in unparsed if _RANGE_RE.search(x)]
+    eventlike = [x for x in unparsed if x not in ranges and looks_like_event(x)]
+    other = [x for x in unparsed if x not in ranges and x not in eventlike]
+    if eventlike:
+        logger.warning(
+            "owa: week %s: %d labels look like events but carry no date it can read %s",
+            monday,
+            len(eventlike),
+            _shapes(eventlike),
+        )
     logger.info(
-        "owa: week %s (rendered %s..%s) -> %d events, %d unparsed (%s)",
+        "owa: week %s (rendered %s..%s) -> %d events (%d not event-shaped %s); "
+        "unparsed: %d date ranges, %d event-like, %d other %s (%s)",
         monday,
         *current,
         len(in_week),
-        failures,
+        len(stray),
+        _shapes(stray),
+        len(ranges),
+        len(eventlike),
+        len(other),
+        _shapes(other),
         _describe(page, labels),
     )
     return in_week, degraded
