@@ -183,6 +183,30 @@ class StuckPage(FakePage):
         return pagers
 
 
+class LatePagerPage(FakePage):
+    """The rows are there before the pager is."""
+
+    def __init__(self, *grids, pager_after):
+        super().__init__(*grids)
+        self.pager_after = pager_after
+
+    def wait_for_timeout(self, ms):
+        super().wait_for_timeout(ms)
+        self.pager_after -= 1
+
+    def get_by_role(self, role, name):
+        pagers = FakePagers(self)
+        if self.pager_after > 0:
+            pagers.count = lambda: 0
+        return pagers
+
+
+class RestlessPage(FakePage):
+    def inner_text(self, selector):
+        self.visited.append("read")
+        return super().inner_text(selector) + str(len(self.visited))
+
+
 def test_every_page_of_every_pager_is_read():
     """A live draft of 21 lines pages its own grid, ahead of the main one."""
     open_grid = [
@@ -212,6 +236,24 @@ def test_a_slow_pager_is_waited_for_and_not_read_as_the_end_of_the_list():
     ]
     lines = read_lines(FakePage(pages, lag=4), "host", "/claims")
     assert {line.day for line in lines} == {date(2026, 7, 13), date(2026, 7, 20)}
+
+
+def test_a_pager_that_renders_after_the_rows_is_not_the_end_of_the_list(caplog):
+    """Seen live, straight after a submit: the first page read as the whole list."""
+    pages = [
+        row("maandag", "13-07-2026", "Akkoord", "Woon-werk"),
+        row("maandag", "20-07-2026", "Akkoord", "Woon-werk"),
+    ]
+    caplog.set_level("INFO")
+    lines = read_lines(LatePagerPage(pages, pager_after=3), "host", "/claims")
+    assert {line.day for line in lines} == {date(2026, 7, 13), date(2026, 7, 20)}
+    assert "on 2 page(s)" in caplog.text
+
+
+def test_a_page_that_never_stops_changing_is_a_failed_read():
+    page = RestlessPage([row("maandag", "13-07-2026", "Akkoord", "Woon-werk")])
+    with pytest.raises(PortalChanged, match="never stopped changing"):
+        read_lines(page, "host", "/claims")
 
 
 def test_an_enabled_pager_that_never_moves_is_a_failed_read():

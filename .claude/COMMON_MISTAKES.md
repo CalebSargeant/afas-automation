@@ -587,6 +587,13 @@ change" as the end instead lets one slow render pass part of the list off as all
 it, and a filed day on the unread page looks absent and gets claimed twice. So
 `_turn_page` waits for the page to change and settle, and raises if it never does.
 
+The opposite trap: a page with nothing to click is not the end either, until it
+has stopped changing. A read straight after a submit returned the first page as
+the whole list, in seconds, with no clickable pager found. Cause not proven; the
+rows can be there before the pager is. `read_lines` now waits for `END_POLLS`
+reads in a row without a change before it ends, and logs how many pages it read,
+so a short read shows up as one page where the read before it had several.
+
 ## A click on a dry card must not count once live
 
 `approve_submission` used to accept `drafted`, which is the state a dry run leaves.
