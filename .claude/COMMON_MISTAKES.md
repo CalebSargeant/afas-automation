@@ -664,7 +664,10 @@ and hands it to `answer_sign_in`, the same state machine the portal sign-in
 uses. Every result line names the page: host, path, the first part of the title,
 `lang`, and how many labels looked like events or carried English dates. Never
 label text, because subjects and colleagues' names do not belong in a log. The
-next failure says which of the three it was.
+next failure says which of the three it was. Each week also sorts its unparsed
+labels into date ranges, event-shaped and other, and names them and any stray
+parsed label by `label_shape()` (structure words kept, everything else `w`,
+digits `9`), so a missed event and page chrome no longer read the same.
 
 For offline checks: Playwright's `route` does not see the target of a redirect.
 Fulfilling a 302 to a sign-in URL sends that request to the real network, so
