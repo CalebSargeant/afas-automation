@@ -383,7 +383,8 @@ jobs:
         memory: 1536Mi
 
 # Placement. Empty by default so the chart stays portable; an environment that
-# has to pin the workload to a tier sets these.
+# has to pin the workload to a tier sets these. A job's own `nodeSelector`
+# replaces this one for that job.
 nodeSelector: {}
 tolerations: []
 affinity: {}

@@ -408,6 +408,13 @@
           },
           "resources": {
             "$ref": "#/$defs/resources"
+          },
+          "nodeSelector": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Replaces the top-level nodeSelector for this job only."
           }
         },
         "required": [
