@@ -2,6 +2,39 @@
 
 <!-- version list -->
 
+## v1.5.0 (2026-11-08)
+
+### Documentation
+
+- Describe the per-job nodeSelector
+  ([#30](https://github.com/CalebSargeant/afas-automation/pull/30),
+  [`61e3115`](https://github.com/CalebSargeant/afas-automation/commit/61e311541fc8950791d59a59166ea87ba6371ebc))
+
+### Features
+
+- Keep classify, build and submit going through a refused sign-in
+  ([#30](https://github.com/CalebSargeant/afas-automation/pull/30),
+  [`61e3115`](https://github.com/CalebSargeant/afas-automation/commit/61e311541fc8950791d59a59166ea87ba6371ebc))
+
+- Survive a refused sign-in, per-job nodeSelector, English Slack text
+  ([#30](https://github.com/CalebSargeant/afas-automation/pull/30),
+  [`61e3115`](https://github.com/CalebSargeant/afas-automation/commit/61e311541fc8950791d59a59166ea87ba6371ebc))
+
+- **chart**: Let a job set its own nodeSelector
+  ([#30](https://github.com/CalebSargeant/afas-automation/pull/30),
+  [`61e3115`](https://github.com/CalebSargeant/afas-automation/commit/61e311541fc8950791d59a59166ea87ba6371ebc))
+
+- **slack**: Post every message in English
+  ([#30](https://github.com/CalebSargeant/afas-automation/pull/30),
+  [`61e3115`](https://github.com/CalebSargeant/afas-automation/commit/61e311541fc8950791d59a59166ea87ba6371ebc))
+
+### Testing
+
+- Assert the English text in the Postgres lifecycle tests
+  ([#30](https://github.com/CalebSargeant/afas-automation/pull/30),
+  [`61e3115`](https://github.com/CalebSargeant/afas-automation/commit/61e311541fc8950791d59a59166ea87ba6371ebc))
+
+
 ## v1.4.2 (2026-11-07)
 
 ### Bug Fixes
