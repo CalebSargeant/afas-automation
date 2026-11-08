@@ -37,6 +37,8 @@ NEXT_PAGE = "Volgende"
 MAX_PAGES = 40
 PAGER_POLL_MS = 3_000
 PAGER_POLLS = 10
+#: Polls in a row without a change before a page with no clickable pager is the end.
+END_POLLS = 3
 
 _HEADER = "Datum boeking\tDatum\tStatus\tSoort declaratie"
 _ROW = re.compile(r"(maandag|dinsdag|woensdag|donderdag|vrijdag|zaterdag|zondag)\t")
@@ -128,8 +130,35 @@ def _turn_page(page: Page, pager: Locator, text: str) -> str:
     raise PortalChanged(f"a {NEXT_PAGE!r} pager is enabled but its page never settled")
 
 
+def _live_pagers(page: Page) -> list[Locator]:
+    pagers = page.get_by_role("button", name=NEXT_PAGE)
+    return [
+        pager
+        for pager in (pagers.nth(i) for i in range(pagers.count()))
+        if pager.is_visible() and pager.is_enabled()
+    ]
+
+
+def _settle(page: Page, text: str) -> str:
+    """The page once END_POLLS reads in a row have not changed it."""
+    quiet = 0
+    for _ in range(PAGER_POLLS):
+        page.wait_for_timeout(PAGER_POLL_MS)
+        current = page.inner_text("body")
+        quiet = quiet + 1 if current == text else 0
+        text = current
+        if quiet == END_POLLS:
+            return text
+    raise PortalChanged("the claim list never stopped changing")
+
+
 def read_lines(page: Page, host: str, path: str) -> list[FiledLine]:
-    """Every line on the claim list, across all its pagers."""
+    """Every line on the claim list, across all its pagers.
+
+    A page can show its rows before its pager is ready. Taking that for the end
+    passes the first page off as the whole list, so a page with nothing to click
+    only ends the list once it has stopped changing.
+    """
     if not path:
         raise ConfigError("CLAIMS_PAGE_PATH is required to read back what AFAS holds")
 
@@ -140,21 +169,20 @@ def read_lines(page: Page, host: str, path: str) -> list[FiledLine]:
     # because the same line also comes round again on every page of the other grid.
     seen: Counter[FiledLine] = Counter()
     text = page.inner_text("body")
-    for _ in range(MAX_PAGES):
+    for turned in range(MAX_PAGES):
         seen |= Counter(parse_lines(text))
 
-        pagers = page.get_by_role("button", name=NEXT_PAGE)
-        live = [
-            pager
-            for pager in (pagers.nth(i) for i in range(pagers.count()))
-            if pager.is_visible() and pager.is_enabled()
-        ]
+        live = _live_pagers(page)
+        if not live:
+            text = _settle(page, text)
+            seen |= Counter(parse_lines(text))
+            live = _live_pagers(page)
         if not live:
             # This account has filed before, so an empty list is a failed read.
             if not seen:
                 raise PortalChanged("the claim list rendered no lines at all")
             lines = list(seen.elements())
-            logger.info("readback: %d line(s) in AFAS", len(lines))
+            logger.info("readback: %d line(s) in AFAS on %d page(s)", len(lines), turned + 1)
             return lines
         text = _turn_page(page, live[0], text)
 
