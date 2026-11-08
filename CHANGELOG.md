@@ -2,6 +2,25 @@
 
 <!-- version list -->
 
+## v1.5.1 (2026-11-08)
+
+### Bug Fixes
+
+- **owa**: Say what unparsed and stray calendar labels were
+  ([#32](https://github.com/CalebSargeant/afas-automation/pull/32),
+  [`a6fd1e8`](https://github.com/CalebSargeant/afas-automation/commit/a6fd1e840838c2f85ad2ae49415ca71f13b0f380))
+
+### Documentation
+
+- Describe the label shapes in the week log
+  ([#32](https://github.com/CalebSargeant/afas-automation/pull/32),
+  [`a6fd1e8`](https://github.com/CalebSargeant/afas-automation/commit/a6fd1e840838c2f85ad2ae49415ca71f13b0f380))
+
+- Outlook refuses the sign-in from some networks
+  ([#31](https://github.com/CalebSargeant/afas-automation/pull/31),
+  [`e630ff1`](https://github.com/CalebSargeant/afas-automation/commit/e630ff1dedb3faf152c29b6870f6710c396c6a86))
+
+
 ## v1.5.0 (2026-11-08)
 
 ### Documentation
