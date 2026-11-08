@@ -139,10 +139,10 @@ def test_a_failed_calendar_read_leaves_decided_days_alone(conn, cfg, monkeypatch
     office(conn, mon)
     store.record_day(conn, DayClassification(tue, Verdict.HOME, [Reason.NO_BOOKING]))
 
-    classify(mon, ([], True))
+    classify(mon, ([], {mon, tue, wed}, "refused"))
     assert days() == [("commute", "planned"), ("home", "planned"), (None, "needs_input")]
 
-    classify(wed, ([], False))
+    classify(wed, ([], set(), ""))
     assert days()[2] == ("home", "planned")
 
 

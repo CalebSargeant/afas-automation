@@ -617,7 +617,8 @@ the same run reads fine, and the alert says the whole window is unreadable.
 
 **Cause.** Not known. The grid rendered, since there is no "no events after first
 load" line, and the header stayed absent through its retry. `read_week` then gave up
-on the week, and one degraded week marks the whole run degraded.
+on the week, and one degraded week used to mark the whole run degraded. Now only
+that week's days are unread; the weeks around it still count.
 
 **Fix.** `read_week` reloads once, then navigates from whatever week comes back, so
 this also covers losing the header after a click. The log prints any header label it
@@ -668,3 +669,19 @@ next failure says which of the three it was.
 For offline checks: Playwright's `route` does not see the target of a redirect.
 Fulfilling a 302 to a sign-in URL sends that request to the real network, so
 fakes redirect from script instead.
+
+## A refused sign-in crashed classify and threw away the weeks it had read
+
+**Symptom.** `classify` crashed: EntraLoginError` in Slack, a failed Job, and no
+new days recorded, although the first week of the window had read fine.
+
+**Cause.** `_read_calendar` let any exception out, so `main` reported a crash and
+the run ended before a single day was written.
+
+**Fix.** `_read_calendar` returns the days no good read covered and what went
+wrong. Each week is its own unit: a degraded or failed week leaves its own days
+unread and keeps the ones before it. It stops at the first exception rather than
+moving to the next week, because the next week would sign in again. `build` and
+`submit` report a failed AFAS sign-in as one alert, and `submit` takes each
+declaration on its own, which is safe only because every step reads AFAS before it
+clicks and writes `in_flight` before the click.

@@ -221,6 +221,11 @@ produce a commute claim for a day spent on leave.
     days with no verdict yet: `classify` leaves a day that a good read already
     decided as it is.
 
+    A read that fails outright, a refused sign-in included, is the same case.
+    `classify` stops reading at the first failure, because reading on would mean
+    signing in again, keeps the weeks it had already read, treats the rest as
+    unread and says so in one alert. It does not crash.
+
     `read_week()` sets it when labels were harvested but every one failed to
     parse. `read_range()` sets it when the connector errored, when it said its
     answer was partial, when every event failed to parse -- and, unless

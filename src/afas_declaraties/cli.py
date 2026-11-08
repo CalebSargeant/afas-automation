@@ -85,37 +85,88 @@ def _alert_once(cfg: Config, conn, key: str, text: str, post=None) -> None:
         store.claim_slack_interaction(conn, key, "alert", "afas")
 
 
-def _read_calendar(cfg: Config, start: date, end: date) -> tuple[list, bool]:
+def _failure(exc: Exception) -> str:
+    return f"{type(exc).__name__}: {str(exc)[:300]}"
+
+
+def _read_calendar(cfg: Config, start: date, end: date) -> tuple[list, set[date], str]:
     """Collect ``start..end`` from whichever calendar source is configured.
 
-    Both sources answer ``(events, degraded)`` and the caller cannot tell them
-    apart, which is the point: the rule that a failed read must never be read as
-    "no office days" has to hold whichever one is in use.
+    Returns the events, the days no good read covered, and what went wrong. A
+    failure, a refused sign-in included, leaves days unread instead of ending the
+    run, and the rule that an unread day is never "no office days" holds whichever
+    source is in use.
     """
+    window = {start + timedelta(days=n) for n in range((end - start).days + 1)}
     if cfg.calendar_source == "mcp":
-        return calendar_mcp.read_range(
-            start,
-            end,
-            tz=cfg.timezone,
-            require_events=cfg.require_calendar_events,
-        )
-
-    with open_session(
-        cfg.insite_host, profile=Path(cfg.profile_dir), item=cfg.op_item, vault=cfg.op_vault
-    ) as (_ctx, page):
-        events: list = []
-        degraded = False
-        week = _monday(start)
-        while week <= end:
-            week_events, week_degraded = read_week(
-                page,
-                week,
-                answer_sign_in=lambda p: sign_in(p, credentials(cfg.op_item, cfg.op_vault)),
+        try:
+            events, degraded = calendar_mcp.read_range(
+                start,
+                end,
+                tz=cfg.timezone,
+                require_events=cfg.require_calendar_events,
             )
-            events.extend(week_events)
-            degraded = degraded or week_degraded
-            week += timedelta(days=7)
-    return events, degraded
+        except Exception as exc:  # noqa: BLE001 - unread days, not a crash
+            logger.exception("classify: calendar read failed")
+            return [], window, _failure(exc)
+        return events, window if degraded else set(), ""
+
+    events: list = []
+    unread: set[date] = set()
+    week = _monday(start)
+    try:
+        with open_session(
+            cfg.insite_host, profile=Path(cfg.profile_dir), item=cfg.op_item, vault=cfg.op_vault
+        ) as (_ctx, page):
+            while week <= end:
+                week_events, week_degraded = read_week(
+                    page,
+                    week,
+                    answer_sign_in=lambda p: sign_in(p, credentials(cfg.op_item, cfg.op_vault)),
+                )
+                events.extend(week_events)
+                if week_degraded:
+                    unread |= {d for d in window if _monday(d) == week}
+                week += timedelta(days=7)
+    except Exception as exc:  # noqa: BLE001 - unread days, not a crash
+        # Stops at the first failure: reading on would mean signing in again.
+        logger.exception("classify: calendar read failed")
+        return events, unread | {d for d in window if d >= week}, _failure(exc)
+    return events, unread, ""
+
+
+def _portal(cfg: Config, stack: contextlib.ExitStack, command: str, outcome: str):
+    """The signed-in page, or None once a failed sign-in has been reported."""
+    try:
+        _ctx, page = stack.enter_context(
+            open_session(
+                cfg.insite_host, profile=Path(cfg.profile_dir), item=cfg.op_item, vault=cfg.op_vault
+            )
+        )
+    except Exception as exc:  # noqa: BLE001 - nothing in AFAS was touched yet
+        logger.exception("%s: could not sign in to AFAS", command)
+        alert(cfg, f"`{command}` could not sign in to AFAS, {outcome}: {_failure(exc)}")
+        return None
+    return page
+
+
+def _each(cfg: Config, step, conn, page, row: dict) -> bool:
+    """One declaration. A failure stays with it, so the next one still gets its turn.
+
+    Safe because every step reads AFAS before it clicks, and writes `in_flight`
+    before the click itself.
+    """
+    try:
+        return step(cfg, conn, page, row)
+    except Exception as exc:  # noqa: BLE001
+        label = f"{row['claim_type']} {row['period_no']:02d}/{row['period_year']}"
+        logger.exception("submit: %s", label)
+        alert(
+            cfg,
+            f"{label}: stopped by {_failure(exc)}. The ledger keeps its state, and the next "
+            "run reads AFAS before it does anything.",
+        )
+        return False
 
 
 def _slack(cfg: Config):
@@ -150,20 +201,24 @@ def cmd_classify(cfg: Config, args) -> int:
                 return _lock_held(cfg, "classify")
 
             existing = {r["day"]: r for r in store.days_between(conn, start, end)}
-            events, degraded = _read_calendar(cfg, start, end)
+            events, unread, problem = _read_calendar(cfg, start, end)
 
-            if degraded:
+            if unread:
                 # Better to record nothing than to record "no bookings".
+                why = f" ({problem})" if problem else ""
                 alert(
                     cfg,
-                    f"calendar unreadable for {start:%d-%m}..{end:%d-%m}. Decided days stay "
-                    "as they are, new days are left undecided.",
+                    f"calendar unreadable for {min(unread):%d-%m}..{max(unread):%d-%m}{why}. "
+                    "Decided days stay as they are, new days are left undecided.",
                 )
+            elif problem:
+                logger.warning("classify: every day was read, then: %s", problem)
 
             day = start
             counts: dict[str, int] = {}
             while day <= end:
                 prior = existing.get(day)
+                degraded = day in unread
                 # A failed read says nothing about a day a good read already decided.
                 if degraded and prior:
                     day += timedelta(days=1)
@@ -467,24 +522,23 @@ def cmd_build(cfg: Config, args) -> int:
             return 0
 
         ok = True
-        with store.browser_lock(conn) as got:
+        with store.browser_lock(conn) as got, contextlib.ExitStack() as stack:
             if not got:
                 return _lock_held(cfg, "build")
-            with open_session(
-                cfg.insite_host, profile=Path(cfg.profile_dir), item=cfg.op_item, vault=cfg.op_vault
-            ) as (_ctx, page):
-                for year, period, claim_type, days in work:
-                    try:
-                        ok = _build_one(cfg, conn, page, year, period, claim_type, days) and ok
-                    except Exception as exc:  # noqa: BLE001
-                        # One broken form must not cost the other claim type its month.
-                        logger.exception("build: %s %02d/%d", claim_type.value, period, year)
-                        alert(
-                            cfg,
-                            f"`build` {claim_type.value} {period:02d}/{year} failed: "
-                            f"{type(exc).__name__}: {str(exc)[:300]}",
-                        )
-                        ok = False
+            page = _portal(cfg, stack, "build", "nothing was built and the next run tries again")
+            if page is None:
+                return 1
+            for year, period, claim_type, days in work:
+                try:
+                    ok = _build_one(cfg, conn, page, year, period, claim_type, days) and ok
+                except Exception as exc:  # noqa: BLE001
+                    # One broken form must not cost the other claim type its month.
+                    logger.exception("build: %s %02d/%d", claim_type.value, period, year)
+                    alert(
+                        cfg,
+                        f"`build` {claim_type.value} {period:02d}/{year} failed: {_failure(exc)}",
+                    )
+                    ok = False
     return 0 if ok else 1
 
 
@@ -699,16 +753,18 @@ def cmd_submit(cfg: Config, args) -> int:
             logger.info("submit: nothing to file")
             return 0 if ok else 1
 
-        with store.browser_lock(conn) as got:
+        with store.browser_lock(conn) as got, contextlib.ExitStack() as stack:
             if not got:
                 return _lock_held(cfg, "submit")
-            with open_session(
-                cfg.insite_host, profile=Path(cfg.profile_dir), item=cfg.op_item, vault=cfg.op_vault
-            ) as (_ctx, page):
-                for row in unsettled:
-                    ok = _settle(cfg, conn, page, row) and ok
-                for row in rows:
-                    ok = _file(cfg, conn, page, row) and ok
+            page = _portal(
+                cfg, stack, "submit", "nothing was submitted and approvals stand for the next run"
+            )
+            if page is None:
+                return 1
+            for row in unsettled:
+                ok = _each(cfg, _settle, conn, page, row) and ok
+            for row in rows:
+                ok = _each(cfg, _file, conn, page, row) and ok
     return 0 if ok else 1
 
 

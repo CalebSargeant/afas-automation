@@ -360,6 +360,24 @@ def test_a_dry_run_rehearses_the_form_and_saves_nothing(cfg, monkeypatch):
     assert portal.cards[0]["open_drafts"] == [JUNE]
 
 
+def test_a_refused_sign_in_is_one_alert_and_builds_nothing(cfg, monkeypatch):
+    store = FakeStore(commute(SEP_1))
+    monkeypatch.setattr(cli, "store", store)
+    portal = Portal(monkeypatch)
+
+    @contextmanager
+    def refused(host, **kw):
+        raise RuntimeError("sign-in refused")
+        yield
+
+    monkeypatch.setattr(cli, "open_session", refused)
+
+    assert build(cfg) == 1
+    assert len(portal.alerts) == 1
+    assert "could not sign in" in portal.alerts[0] and "sign-in refused" in portal.alerts[0]
+    assert store.upserts == [] and store.marked == []
+
+
 def test_one_broken_form_does_not_cost_the_other_claim_type_its_month(cfg, monkeypatch):
     days = {
         (2026, 9, ClaimType.COMMUTE): [SEP_1],

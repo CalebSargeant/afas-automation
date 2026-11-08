@@ -358,8 +358,8 @@ def test_a_click_that_did_not_land_gets_its_card_before_its_state(cfg, monkeypat
         raise RuntimeError("slack is down")
 
     monkeypatch.setattr(cli, "_post_card", slack_down)
-    with pytest.raises(RuntimeError):
-        cli.cmd_submit(cfg, args())
+    assert cli.cmd_submit(cfg, args()) == 1
+    assert "slack is down" in alerts[-1]
     assert store.states == [], "still unsettled, so the next run comes back to it"
 
     monkeypatch.setattr(cli, "_post_card", lambda *a, **kw: None)
@@ -375,3 +375,40 @@ def test_a_held_lock_is_a_failed_run_and_alerts(cfg, monkeypatch, alerts):
     assert cli.cmd_submit(cfg, args()) == 1
     assert "lock" in alerts[0]
     assert store.states == []
+
+
+def test_a_refused_sign_in_is_one_alert_and_touches_nothing(cfg, monkeypatch, alerts):
+    store = FakeStore([submission(2026, 8, ClaimType.COMMUTE)])
+    monkeypatch.setattr(cli, "store", store)
+
+    @contextmanager
+    def refused(host, **kw):
+        raise RuntimeError("sign-in refused")
+        yield
+
+    monkeypatch.setattr(cli, "open_session", refused)
+
+    assert cli.cmd_submit(cfg, args()) == 1
+    assert len(alerts) == 1
+    assert "could not sign in" in alerts[0] and "sign-in refused" in alerts[0]
+    assert store.states == []
+
+
+def test_one_declaration_failing_leaves_the_other_its_turn(cfg, monkeypatch, alerts):
+    rows = [submission(2026, 8, ClaimType.COMMUTE), submission(2026, 8, ClaimType.HOME)]
+    store = FakeStore(rows)
+    monkeypatch.setattr(cli, "store", store)
+    portal = Portal(monkeypatch, draft(ClaimType.HOME))
+    first = [RuntimeError("the list did not load")]
+
+    def read_lines(*a, **kw):
+        if first:
+            raise first.pop()
+        return portal.lines
+
+    monkeypatch.setattr(cli, "read_lines", read_lines)
+
+    assert cli.cmd_submit(cfg, args()) == 1
+    assert "commute 08/2026" in alerts[0] and "the list did not load" in alerts[0]
+    assert portal.clicks == 1, "home is still filed"
+    assert states(store) == [(2026, 8, "in_flight"), (2026, 8, "submitted")]
