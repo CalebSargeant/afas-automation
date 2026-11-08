@@ -685,3 +685,22 @@ moving to the next week, because the next week would sign in again. `build` and
 `submit` report a failed AFAS sign-in as one alert, and `submit` takes each
 declaration on its own, which is safe only because every step reads AFAS before it
 clicks and writes `in_flight` before the click.
+
+## Outlook refuses the sign-in from one network and not from another
+
+**Symptom.** The portal sign-in goes through, Outlook asks for a sign-in, the
+account tile is picked, and Entra answers with *U kunt op dit moment geen toegang
+krijgen* at `/common/reprocess`. classify stops with `EntraLoginError: sign-in
+stopped on a pane it does not recognise`. build and submit sign in normally from
+the same node.
+
+**Cause.** The tenant's Conditional Access decides by where the sign-in comes
+from. It blocked Outlook from one cloud node's egress every night and let the same
+run through from the home network twelve minutes after a blocked run. The policy
+does not cover the portal, which is why only the calendar failed. It looks like a
+pane the state machine is missing. It is not, and nothing here should get past it.
+
+**Fix.** Run the jobs that sign in from a network the tenant allows. The deploy
+config pins them with `jobs.<name>.nodeSelector`. Never spoof the user agent or
+reuse a browser's cookies to get through. When the page comes back, check which
+node the job ran on before touching the code.
