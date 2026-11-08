@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v1.5.2 (2026-11-08)
+
+### Bug Fixes
+
+- **readback**: Wait for a page to settle before calling it the end of the list
+  ([#33](https://github.com/CalebSargeant/afas-automation/pull/33),
+  [`6c7cd50`](https://github.com/CalebSargeant/afas-automation/commit/6c7cd509efb49ae77bacb2ee4482da40e3e9930d))
+
+
 ## v1.5.1 (2026-11-08)
 
 ### Bug Fixes
