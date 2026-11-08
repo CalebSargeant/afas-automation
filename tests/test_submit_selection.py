@@ -235,7 +235,7 @@ def test_a_digest_that_moved_since_approval_is_refused(cfg, monkeypatch, no_brow
     assert store.states == [
         (2026, 8, ClaimType.COMMUTE, "awaiting_approval", "digest changed after approval")
     ]
-    assert "veranderd" in alerts[0]
+    assert "changed after the approval" in alerts[0]
 
 
 def test_an_explicit_period_only_files_that_period(cfg, monkeypatch, alerts):
@@ -261,7 +261,7 @@ def test_a_dry_run_opens_no_browser_and_says_nothing_was_filed(cfg, monkeypatch,
 
     assert cli.cmd_submit(cfg, args()) == 0
     assert states(store) == [(2026, 8, "drafted")]
-    assert "niets ingestuurd" in said[0]
+    assert "nothing was submitted" in said[0]
 
 
 def test_a_click_afas_does_not_confirm_is_not_a_filing(cfg, monkeypatch, alerts):
@@ -273,7 +273,7 @@ def test_a_click_afas_does_not_confirm_is_not_a_filing(cfg, monkeypatch, alerts)
     assert cli.cmd_submit(cfg, args()) == 1
     assert states(store) == [(2026, 8, "in_flight"), (2026, 8, "needs_reconciliation")]
     assert store.marked == []
-    assert "bevestigt het niet" in alerts[0]
+    assert "does not confirm it" in alerts[0]
 
 
 def test_a_crash_after_the_state_write_goes_to_reconciliation(cfg, monkeypatch, alerts):
@@ -299,7 +299,7 @@ def test_a_draft_that_does_not_match_is_never_clicked(cfg, monkeypatch, alerts):
     assert cli.cmd_submit(cfg, args()) == 1
     assert portal.clicks == 0
     assert states(store) == [(2026, 8, "failed")], "left approved, build would skip it for good"
-    assert "klopt niet" in alerts[0]
+    assert "does not match what was approved" in alerts[0]
 
 
 def test_another_open_draft_blocks_filing(cfg, monkeypatch, alerts):
@@ -358,8 +358,8 @@ def test_a_click_that_did_not_land_gets_its_card_before_its_state(cfg, monkeypat
         raise RuntimeError("slack is down")
 
     monkeypatch.setattr(cli, "_post_card", slack_down)
-    with pytest.raises(RuntimeError):
-        cli.cmd_submit(cfg, args())
+    assert cli.cmd_submit(cfg, args()) == 1
+    assert "slack is down" in alerts[-1]
     assert store.states == [], "still unsettled, so the next run comes back to it"
 
     monkeypatch.setattr(cli, "_post_card", lambda *a, **kw: None)
@@ -375,3 +375,40 @@ def test_a_held_lock_is_a_failed_run_and_alerts(cfg, monkeypatch, alerts):
     assert cli.cmd_submit(cfg, args()) == 1
     assert "lock" in alerts[0]
     assert store.states == []
+
+
+def test_a_refused_sign_in_is_one_alert_and_touches_nothing(cfg, monkeypatch, alerts):
+    store = FakeStore([submission(2026, 8, ClaimType.COMMUTE)])
+    monkeypatch.setattr(cli, "store", store)
+
+    @contextmanager
+    def refused(host, **kw):
+        raise RuntimeError("sign-in refused")
+        yield
+
+    monkeypatch.setattr(cli, "open_session", refused)
+
+    assert cli.cmd_submit(cfg, args()) == 1
+    assert len(alerts) == 1
+    assert "could not sign in" in alerts[0] and "sign-in refused" in alerts[0]
+    assert store.states == []
+
+
+def test_one_declaration_failing_leaves_the_other_its_turn(cfg, monkeypatch, alerts):
+    rows = [submission(2026, 8, ClaimType.COMMUTE), submission(2026, 8, ClaimType.HOME)]
+    store = FakeStore(rows)
+    monkeypatch.setattr(cli, "store", store)
+    portal = Portal(monkeypatch, draft(ClaimType.HOME))
+    first = [RuntimeError("the list did not load")]
+
+    def read_lines(*a, **kw):
+        if first:
+            raise first.pop()
+        return portal.lines
+
+    monkeypatch.setattr(cli, "read_lines", read_lines)
+
+    assert cli.cmd_submit(cfg, args()) == 1
+    assert "commute 08/2026" in alerts[0] and "the list did not load" in alerts[0]
+    assert portal.clicks == 1, "home is still filed"
+    assert states(store) == [(2026, 8, "in_flight"), (2026, 8, "submitted")]

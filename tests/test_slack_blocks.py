@@ -61,7 +61,7 @@ def test_dropped_days_are_named_on_the_approval_card():
     )
     text = " ".join(str(b) for b in blocks)
     assert "20-08" in text
-    assert "Niet meegenomen" in text
+    assert "Left out" in text
 
 
 def test_the_card_names_days_left_out_after_reading_afas():
@@ -79,9 +79,9 @@ def test_the_card_names_days_left_out_after_reading_afas():
         open_drafts=[date(2026, 6, 2)],
     )
     text = " ".join(str(b) for b in blocks)
-    assert "Al in AFAS* (1): 03-08" in text
-    assert "Niet vastgelegd* (1): 04-08" in text
-    assert "Open concept in AFAS* (1): 02-06" in text
+    assert "Already in AFAS* (1): 03-08" in text
+    assert "Not recorded* (1): 04-08" in text
+    assert "Open draft in AFAS* (1): 02-06" in text
 
 
 def test_a_clean_card_has_no_warning_sections():
@@ -95,9 +95,9 @@ def test_a_clean_card_has_no_warning_sections():
         dry_run=False,
     )
     text = " ".join(str(b) for b in blocks)
-    assert "Al in AFAS" not in text
-    assert "Niet vastgelegd" not in text
-    assert "Open concept" not in text
+    assert "Already in AFAS" not in text
+    assert "Not recorded" not in text
+    assert "Open draft" not in text
 
 
 def test_dry_run_is_stated_on_the_card():
@@ -140,7 +140,7 @@ def test_a_top_up_card_says_it_is_one():
         dry_run=False,
         top_up=True,
     )
-    assert blocks[0]["text"]["text"] == "Declaratie thuiswerkdagen — 08/2026 (aanvulling)"
+    assert blocks[0]["text"]["text"] == "Work-from-home claim — 08/2026 (top-up)"
 
 
 def test_a_decided_card_keeps_what_it_said_and_loses_its_buttons():
@@ -155,10 +155,10 @@ def test_a_decided_card_keeps_what_it_said_and_loses_its_buttons():
         dry_run=False,
         unrecorded=[date(2026, 8, 4)],
     )
-    decided = decided_card(blocks, "Goedgekeurd door <@U1>")
+    decided = decided_card(blocks, "Approved by <@U1>")
     assert decided[:-1] == [b for b in blocks if b["type"] != "actions"]
-    assert decided[-1]["text"]["text"] == "Goedgekeurd door <@U1>"
-    assert "Niet vastgelegd* (1): 04-08" in str(decided)
+    assert decided[-1]["text"]["text"] == "Approved by <@U1>"
+    assert "Not recorded* (1): 04-08" in str(decided)
 
 
 def test_corrections_modal_block_ids_parse_back_to_dates():
@@ -186,4 +186,4 @@ def test_weekly_digest_leads_with_unresolved_days():
         },
     ]
     text = " ".join(str(b) for b in weekly_digest(rows, week_start=date(2026, 8, 31)))
-    assert "Onbeslist" in text and "booking_withdrawn" in text
+    assert "Undecided" in text and "booking_withdrawn" in text

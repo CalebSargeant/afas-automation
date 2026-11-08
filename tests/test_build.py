@@ -197,7 +197,7 @@ def test_a_draft_afas_does_not_show_fails_and_alerts(cfg, monkeypatch):
     assert store.upserts == [(2026, 9, ClaimType.COMMUTE, 1, "failed")]
     assert store.marked == [], "a day is only drafted once AFAS shows it"
     assert portal.cards == []
-    assert "Aanmaken geklikt" in portal.alerts[0]
+    assert "clicked Aanmaken" in portal.alerts[0]
 
 
 def test_days_already_in_afas_are_not_offered_again(cfg, monkeypatch):
@@ -266,7 +266,7 @@ def test_a_draft_that_differs_from_the_ledger_fails_loudly(cfg, monkeypatch):
     assert build(cfg) == 1
     assert portal.created == 0
     assert store.upserts == [(2026, 9, ClaimType.COMMUTE, 2, "failed")]
-    assert "klopt niet" in portal.alerts[0]
+    assert "does not match the ledger" in portal.alerts[0]
 
 
 def test_a_draft_the_app_did_not_make_makes_this_one_wait(cfg, monkeypatch):
@@ -311,7 +311,7 @@ def test_a_month_behind_the_apps_own_draft_waits_quietly(cfg, monkeypatch, state
     assert store.upserts == []
     assert portal.alerts == []
     assert len(told) == 1, "said once per open draft"
-    assert "commute 09/2026 wacht op commute 06/2026" in told[0]
+    assert "commute 09/2026 waits for commute 06/2026" in told[0]
 
 
 @pytest.mark.parametrize(
@@ -358,6 +358,24 @@ def test_a_dry_run_rehearses_the_form_and_saves_nothing(cfg, monkeypatch):
     assert store.marked == []
     assert store.upserts == [(2026, 9, ClaimType.COMMUTE, 1, "drafted")]
     assert portal.cards[0]["open_drafts"] == [JUNE]
+
+
+def test_a_refused_sign_in_is_one_alert_and_builds_nothing(cfg, monkeypatch):
+    store = FakeStore(commute(SEP_1))
+    monkeypatch.setattr(cli, "store", store)
+    portal = Portal(monkeypatch)
+
+    @contextmanager
+    def refused(host, **kw):
+        raise RuntimeError("sign-in refused")
+        yield
+
+    monkeypatch.setattr(cli, "open_session", refused)
+
+    assert build(cfg) == 1
+    assert len(portal.alerts) == 1
+    assert "could not sign in" in portal.alerts[0] and "sign-in refused" in portal.alerts[0]
+    assert store.upserts == [] and store.marked == []
 
 
 def test_one_broken_form_does_not_cost_the_other_claim_type_its_month(cfg, monkeypatch):

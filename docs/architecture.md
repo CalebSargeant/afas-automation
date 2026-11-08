@@ -112,7 +112,7 @@ count after the flip to live.
 A month that has gone in can still gain days, for example a day corrected after
 the claim was sent. Those days go in a top-up: the next `round_no` for that period
 and claim type, which is a declaration of its own in AFAS with its own card
-(headed *aanvulling*) and its own approval. A new round opens only once the latest
+(headed *top-up*) and its own approval. A new round opens only once the latest
 one is `submitted`, so a period has at most one round in motion, and a round that
 has gone in is never rewritten.
 
@@ -220,6 +220,11 @@ produce a commute claim for a day spent on leave.
     turn a failure into an empty list. Never discard it. The rule only reaches
     days with no verdict yet: `classify` leaves a day that a good read already
     decided as it is.
+
+    A read that fails outright, a refused sign-in included, is the same case.
+    `classify` stops reading at the first failure, because reading on would mean
+    signing in again, keeps the weeks it had already read, treats the rest as
+    unread and says so in one alert. It does not crash.
 
     `read_week()` sets it when labels were harvested but every one failed to
     parse. `read_range()` sets it when the connector errored, when it said its

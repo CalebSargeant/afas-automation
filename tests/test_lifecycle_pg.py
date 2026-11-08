@@ -139,10 +139,10 @@ def test_a_failed_calendar_read_leaves_decided_days_alone(conn, cfg, monkeypatch
     office(conn, mon)
     store.record_day(conn, DayClassification(tue, Verdict.HOME, [Reason.NO_BOOKING]))
 
-    classify(mon, ([], True))
+    classify(mon, ([], {mon, tue, wed}, "refused"))
     assert days() == [("commute", "planned"), ("home", "planned"), (None, "needs_input")]
 
-    classify(wed, ([], False))
+    classify(wed, ([], set(), ""))
     assert days()[2] == ("home", "planned")
 
 
@@ -215,7 +215,7 @@ def test_a_correction_after_the_draft_voids_the_approval(conn, cfg, monkeypatch)
 
     # The draft still holds the removed day. It stays a draft until a human fixes it.
     assert build(cfg) == 1
-    assert "klopt niet" in portal.alerts[0]
+    assert "does not match the ledger" in portal.alerts[0]
     assert store.get_submission(conn, 2026, 9, ClaimType.COMMUTE)["state"] == "failed"
     assert {line.status for line in portal.lines} == {"Medewerker"}
 
@@ -342,7 +342,7 @@ def test_a_filed_month_takes_a_top_up_and_its_sent_round_stays_as_it_was(conn, c
     assert submit(cfg) == 0
 
     assert portal.alerts == []
-    assert "1 regel(s)" in told[-1] and "10-09-2026" in told[-1], "only the late day was filed"
+    assert "1 line(s)" in told[-1] and "10-09-2026" in told[-1], "only the late day was filed"
     assert states(conn, [*SEP_DAYS, late]) == ["submitted"] * 3
     first, second = rounds(conn, 2026, 9, ClaimType.COMMUTE)
     assert first == sent, "a round that went in is history"

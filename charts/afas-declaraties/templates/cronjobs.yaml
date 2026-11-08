@@ -98,7 +98,7 @@ spec:
                 {{- include "afas.volumeMounts" (dict "root" $root "browser" $job.browser) | nindent 16 }}
           volumes:
             {{- include "afas.volumes" (dict "root" $root "browser" $job.browser) | nindent 12 }}
-          {{- with $root.Values.nodeSelector }}
+          {{- with ($job.nodeSelector | default $root.Values.nodeSelector) }}
           nodeSelector:
             {{- toYaml . | nindent 12 }}
           {{- end }}
