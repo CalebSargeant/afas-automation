@@ -235,6 +235,10 @@ helm template afas-declaraties charts/afas-declaraties \
 All CronJobs set `spec.timeZone: Europe/Amsterdam` so the schedule stays correct
 across DST.
 
+`jobs.<name>.nodeSelector` replaces the top-level `nodeSelector` for that job
+only. Use it when one browser job has to run from a different network than the
+rest, for example where the identity provider allows the calendar to be read.
+
 ### Browser job safety
 
 Every browser job runs with:
