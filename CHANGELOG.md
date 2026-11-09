@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v1.5.3 (2026-11-09)
+
+### Bug Fixes
+
+- **build**: File a month on the 11th instead of the 28th
+  ([#34](https://github.com/CalebSargeant/afas-automation/pull/34),
+  [`8a05608`](https://github.com/CalebSargeant/afas-automation/commit/8a05608a5961d1e14c4745bbeb5c589755c8b3d3))
+
+
 ## v1.5.2 (2026-11-08)
 
 ### Bug Fixes
