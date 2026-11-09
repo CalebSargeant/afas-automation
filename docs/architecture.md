@@ -74,9 +74,10 @@ stuck in a sign-in flow.
 ### Build
 
 Runs every morning at 06:00, and most mornings exits before opening a browser. A
-month falls due on the 28th of the month after it. `store.open_periods()` also
-returns any older month that still holds an open day, so a month that failed once
-is picked up the next morning instead of being lost.
+month falls due on the 11th of the month after it, once `classify`'s trailing
+window has passed its last day. `store.open_periods()` also returns any older
+month that still holds an open day, so a month that failed once is picked up the
+next morning instead of being lost.
 
 1. `_plan_build()` works from the ledger alone: which due periods hold
    `store.claimable_days()` that no card or sent claim already covers. A period

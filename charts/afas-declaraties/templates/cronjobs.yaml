@@ -20,7 +20,7 @@ metadata:
 spec:
   schedule: {{ $job.schedule | quote }}
   {{- with $job.timeZone }}
-  # Named zone rather than UTC arithmetic: "the 28th at 06:00" has to stay
+  # Named zone rather than UTC arithmetic: "the 11th at 06:00" has to stay
   # 06:00 across the March and October DST changes, and a claim filed an hour
   # into the next day lands in the wrong period.
   timeZone: {{ . | quote }}
