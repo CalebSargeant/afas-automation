@@ -82,8 +82,9 @@ overrides, which subsequent nightly runs will not overwrite.
 ### 3. Build (daily, once a month is due)
 
 Runs every morning and opens no browser unless a month has work to do, so a crash
-costs a day rather than a month. A month falls due on the 28th of the month after
-it. Build reads *Mijn declaraties* first, because AFAS outranks the ledger: a day
+costs a day rather than a month. A month falls due on the 11th of the month after
+it, the first morning after classify has re-read its last day for the last time.
+Build reads *Mijn declaraties* first, because AFAS outranks the ledger: a day
 already filed, by hand or by an earlier run, is recorded as filed and not offered
 again.
 

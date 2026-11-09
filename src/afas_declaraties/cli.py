@@ -35,8 +35,11 @@ from .slack_blocks import approval_card, weekly_digest
 
 logger = logging.getLogger("afas")
 
-#: A month falls due on this day of the month after it.
-BUILD_DAY = 28
+CLASSIFY_WINDOW = 9
+
+#: A month falls due on this day of the month after it: the first morning after
+#: `classify` last re-reads the month's final day, so build files settled days.
+BUILD_DAY = CLASSIFY_WINDOW + 2
 
 #: The click may have landed. Only AFAS can say, and `submit` asks it before anyone builds.
 _UNSETTLED_STATES = {"in_flight", "needs_reconciliation"}
@@ -782,7 +785,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--since")
     p.add_argument("--until")
     p.add_argument(
-        "--window", type=int, default=9, help="days back from --until when --since is absent"
+        "--window",
+        type=int,
+        default=CLASSIFY_WINDOW,
+        help="days back from --until when --since is absent",
     )
     p.set_defaults(func=cmd_classify)
 

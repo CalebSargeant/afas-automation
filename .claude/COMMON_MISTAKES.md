@@ -374,7 +374,7 @@ Check the set of `jobs:` in `values.yaml` against the set of subcommands in
 working feature from inside the repo.
 
 And when adding that job: **do not derive the period from the date.** `build`
-runs on the 28th for the *previous* month, so any submit landing on or after
+runs on the 11th for the *previous* month, so any submit landing on or after
 the 1st would compute a month later than the one approved. Read the period off
 the approved row. Regression tests in `tests/test_submit_selection.py`.
 

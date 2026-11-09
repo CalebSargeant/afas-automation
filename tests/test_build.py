@@ -24,14 +24,14 @@ JUNE = date(2026, 6, 2)
 @pytest.mark.parametrize(
     "today, due",
     [
-        (date(2026, 10, 27), (2026, 8)),
-        (date(2026, 10, 28), (2026, 9)),
         (date(2026, 11, 1), (2026, 9)),
+        (date(2026, 11, 10), (2026, 9)),
+        (date(2026, 11, 11), (2026, 10)),
         (date(2027, 1, 5), (2026, 11)),
-        (date(2027, 1, 28), (2026, 12)),
+        (date(2027, 1, 11), (2026, 12)),
     ],
 )
-def test_a_month_falls_due_on_the_28th_of_the_month_after_it(today, due):
+def test_a_month_falls_due_on_the_11th_of_the_month_after_it(today, due):
     assert cli._latest_due(today) == due
 
 
