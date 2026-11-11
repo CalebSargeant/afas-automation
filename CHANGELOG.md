@@ -2,6 +2,21 @@
 
 <!-- version list -->
 
+## v1.5.4 (2026-11-11)
+
+### Bug Fixes
+
+- **readback**: Decide only from a claim list that holds every filed day
+  ([#35](https://github.com/CalebSargeant/afas-automation/pull/35),
+  [`fde88b8`](https://github.com/CalebSargeant/afas-automation/commit/fde88b8bab28d540d3d2ed3c0fc92def1eb5c557))
+
+### Chores
+
+- **deps**: Bump actions/setup-python
+  ([#22](https://github.com/CalebSargeant/afas-automation/pull/22),
+  [`d4c0a04`](https://github.com/CalebSargeant/afas-automation/commit/d4c0a047f54e141c946fc567ac6ae15572ea93e5))
+
+
 ## v1.5.3 (2026-11-09)
 
 ### Bug Fixes
