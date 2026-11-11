@@ -37,8 +37,9 @@ def submission(year, period, claim_type, digest="d0", state="approved"):
 class FakeStore:
     """Just enough of `store` for cmd_submit, recording what it was told."""
 
-    def __init__(self, approved, days=None, digest="d0", unsettled=(), lock=True):
+    def __init__(self, approved, days=None, digest="d0", unsettled=(), lock=True, filed=()):
         self._approved = approved
+        self._filed = list(filed)
         self._days = days if days is not None else [DAY]
         self._digest = digest
         self._unsettled = list(unsettled)
@@ -92,6 +93,9 @@ class FakeStore:
         self.states.append((year, period, claim_type, state, error))
         if digest:
             self.digests.append(digest)
+
+    def submitted_days(self, conn):
+        return list(self._filed)
 
     def mark_days_state(self, conn, days, state):
         self.marked.append(list(days))
@@ -313,6 +317,31 @@ def test_another_open_draft_blocks_filing(cfg, monkeypatch, alerts):
     assert portal.clicks == 0
     assert states(store) == [(2026, 8, "approved")], "the approved draft is intact, so it stands"
     assert "02-06-2026" in alerts[0]
+
+
+def test_a_list_that_came_back_short_is_never_clicked(cfg, monkeypatch, alerts):
+    """A filed day on the part a short read missed would look absent."""
+    store = FakeStore([submission(2026, 8, ClaimType.COMMUTE)], filed=[date(2026, 6, 1)])
+    monkeypatch.setattr(cli, "store", store)
+    portal = Portal(monkeypatch, draft(ClaimType.COMMUTE))
+
+    assert cli.cmd_submit(cfg, args()) == 1
+    assert portal.clicks == 0
+    assert states(store) == [], "the approval stands for the next run"
+    assert "came back short" in alerts[0]
+
+
+def test_a_short_list_never_settles_an_interrupted_click(cfg, monkeypatch, alerts):
+    """Without the check, this list says the draft is gone and the next build files it again."""
+    row = submission(2026, 8, ClaimType.COMMUTE, state="needs_reconciliation")
+    store = FakeStore([], unsettled=[row], filed=[date(2026, 6, 1)])
+    monkeypatch.setattr(cli, "store", store)
+    portal = Portal(monkeypatch, [FiledLine(date(2026, 7, 1), "Akkoord", ClaimType.HOME)])
+
+    assert cli.cmd_submit(cfg, args()) == 1
+    assert portal.clicks == 0
+    assert states(store) == []
+    assert "came back short" in alerts[0]
 
 
 def test_lines_already_filed_are_recorded_without_a_click(cfg, monkeypatch, alerts):

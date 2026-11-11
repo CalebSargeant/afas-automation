@@ -9,7 +9,7 @@ import pytest
 from afas_declaraties.config import ConfigError
 from afas_declaraties.insite import PortalChanged
 from afas_declaraties.models import ClaimType
-from afas_declaraties.readback import FiledLine, parse_lines, position, read_lines
+from afas_declaraties.readback import FiledLine, complete, parse_lines, position, read_lines
 
 HEADER = "\n\t\n".join(
     [
@@ -271,3 +271,12 @@ def test_a_list_with_no_lines_is_a_failed_read():
 def test_a_missing_page_path_is_a_config_error_not_an_empty_list():
     with pytest.raises(ConfigError):
         read_lines(FakePage([""]), "host", "")
+
+
+def test_a_read_without_a_day_known_to_be_filed_came_back_short():
+    """A filed line stays on the list, so missing one means the read stopped early."""
+    lines = [FiledLine(date(2026, 7, 13), "Akkoord", ClaimType.COMMUTE)]
+    assert complete(lines, []) == lines
+    assert complete(lines, [date(2026, 7, 13)]) == lines
+    with pytest.raises(PortalChanged, match="came back short: 1 day"):
+        complete(lines, [date(2026, 7, 13), date(2026, 7, 20)])

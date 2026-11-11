@@ -519,6 +519,13 @@ def days_between(conn: psycopg.Connection, start: date, end: date) -> list[dict]
         return cur.fetchall()
 
 
+def submitted_days(conn: psycopg.Connection) -> list[date]:
+    """Days AFAS has been seen to hold as filed. A whole read of the claim list shows them."""
+    with conn.cursor() as cur:
+        cur.execute("SELECT day FROM claim_day WHERE state = 'submitted' ORDER BY day")
+        return [row["day"] for row in cur.fetchall()]
+
+
 def mark_days_state(conn: psycopg.Connection, days: Sequence[date], state: DayState) -> None:
     """Advance a set of days, without disturbing anything already submitted."""
     with conn.cursor() as cur:
