@@ -520,7 +520,17 @@ def days_between(conn: psycopg.Connection, start: date, end: date) -> list[dict]
 
 
 def submitted_days(conn: psycopg.Connection) -> list[date]:
-    """Days AFAS has been seen to hold as filed. A whole read of the claim list shows them."""
+    """Days the ledger has seen AFAS hold as filed, unbounded in time.
+
+    ``complete()`` requires every returned day to appear on the current claim-list
+    read.  This is correct as long as AFAS retains all filed lines on *Mijn
+    declaraties* indefinitely — which is the invariant this design assumes.  If
+    AFAS ever scopes the list (a year filter, an archived period, a hand-deletion),
+    ``_whole_list()`` will stall with ``PortalChanged`` on every run until an
+    operator reconciles the ledger.  That is a recoverable, non-data-loss failure
+    and fits "claim less, never more".  If it happens, scope this query to the same
+    window AFAS uses so the two sides cannot drift.
+    """
     with conn.cursor() as cur:
         cur.execute("SELECT day FROM claim_day WHERE state = 'submitted' ORDER BY day")
         return [row["day"] for row in cur.fetchall()]
