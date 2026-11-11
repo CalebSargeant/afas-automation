@@ -29,7 +29,7 @@ from .insite import (
     submit_declaration,
 )
 from .models import ClaimType, DayState, Verdict
-from .readback import position, read_lines
+from .readback import FiledLine, complete, position, read_lines
 from .session import credentials, open_session
 from .slack_blocks import approval_card, weekly_digest
 
@@ -392,10 +392,19 @@ def _waits_for(label: str, claim_type: ClaimType, sub: dict) -> str:
     )
 
 
+def _whole_list(cfg: Config, conn, page) -> list[FiledLine]:
+    """The claim list to decide from, refused when it stopped short.
+
+    A read that only confirms a click has to show its own lines, not the rest,
+    so those call read_lines directly.
+    """
+    return complete(read_lines(page, cfg.insite_host, cfg.claims_page), store.submitted_days(conn))
+
+
 def _build_one(cfg: Config, conn, page, year, period, claim_type, days) -> bool:
     """One claim type for one period. True unless a human has to step in."""
     label = f"{claim_type.value} {period:02d}/{year}"
-    pos = position(read_lines(page, cfg.insite_host, cfg.claims_page), claim_type, days)
+    pos = position(_whole_list(cfg, conn, page), claim_type, days)
 
     # AFAS outranks the ledger: a day filed by hand or by an earlier run is not
     # offered again. Written down, so the ledger stops proposing it.
@@ -581,7 +590,7 @@ def _settle(cfg: Config, conn, page, row: dict) -> bool:
     claim_type = ClaimType(row["claim_type"])
     label = f"{claim_type.value} {period:02d}/{year}"
     days = [r["day"] for r in store.claimable_days(conn, year, period, claim_type)]
-    pos = position(read_lines(page, cfg.insite_host, cfg.claims_page), claim_type, days)
+    pos = position(_whole_list(cfg, conn, page), claim_type, days)
 
     if days and pos.filed == sorted(days):
         _record_filed(cfg, conn, year, period, claim_type, days)
@@ -647,7 +656,7 @@ def _file(cfg: Config, conn, page, row: dict) -> bool:
     label = f"{claim_type.value} {period:02d}/{year}"
     days = [r["day"] for r in store.claimable_days(conn, year, period, claim_type)]
 
-    pos = position(read_lines(page, cfg.insite_host, cfg.claims_page), claim_type, days)
+    pos = position(_whole_list(cfg, conn, page), claim_type, days)
     if pos.filed == sorted(days):
         _record_filed(cfg, conn, year, period, claim_type, days)
         return True

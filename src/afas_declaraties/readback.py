@@ -182,11 +182,35 @@ def read_lines(page: Page, host: str, path: str) -> list[FiledLine]:
             if not seen:
                 raise PortalChanged("the claim list rendered no lines at all")
             lines = list(seen.elements())
-            logger.info("readback: %d line(s) in AFAS on %d page(s)", len(lines), turned + 1)
+            kinds = Counter(
+                f"{ln.claim_type.value if ln.claim_type else 'other'}/{ln.status}" for ln in lines
+            )
+            logger.info(
+                "readback: %d line(s) in AFAS on %d page(s) %s",
+                len(lines),
+                turned + 1,
+                dict(sorted(kinds.items())),
+            )
             return lines
         text = _turn_page(page, live[0], text)
 
     raise PortalChanged(f"the claim list was still paging after {MAX_PAGES} pages")
+
+
+def complete(lines: list[FiledLine], filed: Iterable[date]) -> list[FiledLine]:
+    """``lines``, if they hold every day AFAS is known to hold as filed.
+
+    A filed line stays on the list, so a read without one of them stopped short,
+    and a decision taken from it would read a filed day it missed as absent.
+    """
+    missing = sorted(set(filed) - {line.day for line in lines})
+    if missing:
+        raise PortalChanged(
+            f"the claim list came back short: {len(missing)} day(s) the ledger has as filed "
+            f"are not on it ({missing[0]:%d-%m-%Y} to {missing[-1]:%d-%m-%Y}), so nothing "
+            "was decided from it"
+        )
+    return lines
 
 
 def position(lines: Iterable[FiledLine], claim_type: ClaimType, days: Iterable[date]) -> Position:

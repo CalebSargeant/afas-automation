@@ -594,6 +594,26 @@ rows can be there before the pager is. `read_lines` now waits for `END_POLLS`
 reads in a row without a change before it ends, and logs how many pages it read,
 so a short read shows up as one page where the read before it had several.
 
+## A later read in the same session can come back short
+
+**Symptom.** None of its own, which is the danger. A build or submit that reads the
+claim list more than once logs fewer lines on a later read than on its first, with
+no error, ending on a page with no clickable pager. The first read of a session has
+held the whole list every time so far.
+
+**Cause.** Not proven. It follows a click in the same session, Aanmaken or insturen.
+A decision taken from such a read sees a filed day it missed as absent, which drafts
+that day again, and a second short read can then file it twice.
+
+**Fix.** `readback.complete()`: a read that a decision rests on must hold every day
+the ledger has as `submitted`, because a filed line stays on the list. Build's first
+read, `_settle` and `_file`'s first read go through `cli._whole_list()`, and a short
+one raises `PortalChanged`, so that declaration waits for the next run. The reads
+straight after a click are not checked: they only confirm lines they can see, and a
+short read cannot show a line that is not there. Two declarations in one run can
+therefore take two runs. The readback log line breaks its lines down by claim type
+and status, so the next short read says what it was missing.
+
 ## A click on a dry card must not count once live
 
 `approve_submission` used to accept `drafted`, which is the state a dry run leaves.

@@ -36,8 +36,11 @@ def test_a_month_falls_due_on_the_11th_of_the_month_after_it(today, due):
 
 
 class FakeStore:
-    def __init__(self, days=None, submissions=None, unresolved=(), periods=None, lock=True):
+    def __init__(
+        self, days=None, submissions=None, unresolved=(), periods=None, lock=True, filed=()
+    ):
         self._days = days or {}
+        self._filed = list(filed)
         self._submissions = submissions or {}
         self._unresolved = list(unresolved)
         self._periods = periods if periods is not None else [(2026, 9)]
@@ -74,6 +77,9 @@ class FakeStore:
 
     def period_for(self, day):
         return day.year, day.month
+
+    def submitted_days(self, conn):
+        return list(self._filed)
 
     def mark_days_state(self, conn, days, state):
         self.marked.append((list(days), state))
@@ -198,6 +204,38 @@ def test_a_draft_afas_does_not_show_fails_and_alerts(cfg, monkeypatch):
     assert store.marked == [], "a day is only drafted once AFAS shows it"
     assert portal.cards == []
     assert "clicked Aanmaken" in portal.alerts[0]
+
+
+def test_a_list_that_came_back_short_drafts_nothing(cfg, monkeypatch):
+    """Seen live: reads later in a session lacked lines AFAS holds as filed."""
+    store = FakeStore(commute(SEP_1), filed=[JUNE])
+    monkeypatch.setattr(cli, "store", store)
+    portal = Portal(monkeypatch)
+
+    assert build(cfg) == 1
+    assert portal.created == 0
+    assert store.marked == [] and store.upserts == []
+    assert "came back short" in portal.alerts[0]
+
+
+def test_a_short_read_can_still_confirm_the_draft_it_shows(cfg, monkeypatch):
+    """Only a decision needs the whole list. A confirmation needs its own lines."""
+    store = FakeStore(commute(SEP_1), filed=[JUNE])
+    monkeypatch.setattr(cli, "store", store)
+    portal = Portal(monkeypatch, [line(JUNE, "Akkoord")])
+    reads = []
+
+    def short_after_the_first(*a, **kw):
+        reads.append(1)
+        if len(reads) == 1:
+            return list(portal.lines)
+        return [ln for ln in portal.lines if ln.status == "Medewerker"]
+
+    monkeypatch.setattr(cli, "read_lines", short_after_the_first)
+
+    assert build(cfg) == 0
+    assert portal.cards[0]["days"] == [SEP_1]
+    assert portal.alerts == []
 
 
 def test_days_already_in_afas_are_not_offered_again(cfg, monkeypatch):

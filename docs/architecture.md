@@ -87,6 +87,10 @@ next morning instead of being lost.
    sorts each day into filed, draft, absent or conflict. AFAS outranks the ledger:
    a filed day is marked `submitted` and not offered again, and a day holding
    another claim type or an unknown status goes to `needs_input` with an alert.
+   `readback.complete()` refuses a read that lacks a day the ledger already has
+   as `submitted`: a filed line stays on the list, so that read stopped short, and
+   the declaration waits for the next run. The read after a click only has to
+   show its own lines, so it is not checked this way.
 3. For each absent day: `add_row()` (discovering the window index), `fill_row()`,
    `verify_row()`, `confirm_row()`.
 4. `create_draft()` clicks the page-level `Aanmaken`, producing a
