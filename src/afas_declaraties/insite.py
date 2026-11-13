@@ -347,7 +347,6 @@ def create_draft(page: Page, *, dry_run: bool = True) -> bool:
 
 BANNER_LINK = "a.webBanner-banneritem"
 ACTION_SUBMIT = "Declaratie insturen"
-ACTION_AMEND = "Aanpassen"
 ACTION_DELETE = "Verwijderen"
 
 TASK_LABEL = "Declaratie voorbereiden"
