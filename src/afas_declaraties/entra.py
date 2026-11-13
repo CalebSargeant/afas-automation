@@ -314,7 +314,6 @@ def sign_in(page: Page, creds: Credentials, *, timeout_ms: int = 120_000) -> Non
             # preceding page loads would spend most of that window.
             if _fill_verified(page, SEL_TOTP, creds.totp(), label="TOTP"):
                 page.click(SEL_TOTP_VERIFY)
-                typed_password = typed_password
                 _await_inactive(page, SEL_TOTP)
                 logger.info("entra: TOTP submitted")
         elif _choose_code_method(page):
