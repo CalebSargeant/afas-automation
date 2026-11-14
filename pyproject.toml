@@ -20,7 +20,7 @@ classifiers = [
 # requirements.txt is the authority for what ships; keep these in sync when refreshing it.
 dependencies = [
     "playwright==1.64.1",      # bundles Chromium 156.0.8078.4
-    "psycopg[binary]==3.3.7",  # CNPG Postgres; binary so the image needs no libpq/build deps
+    "psycopg[binary]==3.3.8",  # CNPG Postgres; binary so the image needs no libpq/build deps
     "slack-bolt==1.30.0",      # Socket Mode app: digest, approve/reject buttons, override modal
     "websockets==17.4",        # the transport slack_sdk's Socket Mode client runs on
 ]
