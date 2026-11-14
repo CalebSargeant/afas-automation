@@ -115,19 +115,19 @@ def test_a_day_both_drafted_and_filed_is_a_conflict():
 
 
 class FakePager:
-    def __init__(self, page, index):
-        self.page, self.index = page, index
+    def __init__(self, page, index, step):
+        self.page, self.index, self.step = page, index, step
 
     def is_visible(self):
         return True
 
     def is_enabled(self):
-        return self.page.position[self.index] < len(self.page.grids[self.index]) - 1
+        return 0 <= self.page.position[self.index] + self.step < len(self.page.grids[self.index])
 
     def click(self, timeout=None):
         self.page.stale = self.page.render()
         self.page.settling = self.page.lag
-        self.page.position[self.index] += 1
+        self.page.position[self.index] += self.step
 
 
 class StuckPager(FakePager):
@@ -139,22 +139,22 @@ class StuckPager(FakePager):
 
 
 class FakePagers:
-    def __init__(self, page):
-        self.page = page
+    def __init__(self, page, step):
+        self.page, self.step = page, step
 
     def count(self):
         return len(self.page.grids)
 
     def nth(self, index):
-        return FakePager(self.page, index)
+        return FakePager(self.page, index, self.step)
 
 
 class FakePage:
-    """Each grid is a list of pages; each pager walks its own grid."""
+    """Each grid is a list of pages; its Vorige and Volgende pagers walk it."""
 
-    def __init__(self, *grids, lag=0):
+    def __init__(self, *grids, lag=0, start=None):
         self.grids = grids
-        self.position = [0] * len(grids)
+        self.position = list(start or [0] * len(grids))
         self.visited = []
         self.lag = lag
         self.settling = 0
@@ -173,13 +173,14 @@ class FakePage:
         return self.stale if self.settling else self.render()
 
     def get_by_role(self, role, name):
-        return FakePagers(self)
+        return FakePagers(self, -1 if name == "Vorige" else 1)
 
 
 class StuckPage(FakePage):
     def get_by_role(self, role, name):
-        pagers = FakePagers(self)
-        pagers.nth = lambda index: StuckPager(self, index)
+        pagers = super().get_by_role(role, name)
+        if pagers.step == 1:
+            pagers.nth = lambda index: StuckPager(self, index, 1)
         return pagers
 
 
@@ -195,7 +196,7 @@ class LatePagerPage(FakePage):
         self.pager_after -= 1
 
     def get_by_role(self, role, name):
-        pagers = FakePagers(self)
+        pagers = super().get_by_role(role, name)
         if self.pager_after > 0:
             pagers.count = lambda: 0
         return pagers
@@ -226,6 +227,26 @@ def test_every_page_of_every_pager_is_read():
         date(2026, 7, 20),
         date(2026, 7, 27),
     }
+
+
+def test_a_grid_reopened_on_its_last_page_is_read_from_its_first(caplog):
+    """InSite reopens the main grid where the session left it, so a second read
+    started on its last page and saw only that page and the open grid."""
+    open_grid = [
+        row("maandag", "04-03-2030", "Medewerker", "Thuiswerkdagen"),
+        row("dinsdag", "05-03-2030", "Medewerker", "Thuiswerkdagen"),
+    ]
+    main_grid = [
+        row("maandag", "04-03-2030", "Medewerker", "Thuiswerkdagen"),
+        row("dinsdag", "05-02-2030", "Akkoord", "Woon-werk"),
+        row("maandag", "07-01-2030", "Akkoord", "Thuiswerkdagen"),
+    ]
+    filed = [date(2030, 2, 5), date(2030, 1, 7)]
+    caplog.set_level("INFO")
+    lines = read_lines(FakePage(open_grid, main_grid, start=[0, 2]), "host", "/claims")
+    assert complete(lines, filed) == lines
+    assert {line.day for line in lines} == {date(2030, 3, 4), date(2030, 3, 5), *filed}
+    assert "after paging back 2" in caplog.text
 
 
 def test_a_slow_pager_is_waited_for_and_not_read_as_the_end_of_the_list():
