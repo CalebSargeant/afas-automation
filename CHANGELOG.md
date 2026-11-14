@@ -2,6 +2,21 @@
 
 <!-- version list -->
 
+## v1.5.5 (2026-11-14)
+
+### Bug Fixes
+
+- **readback**: Page back to the first page before reading the claim list
+  ([#40](https://github.com/CalebSargeant/afas-automation/pull/40),
+  [`be6a085`](https://github.com/CalebSargeant/afas-automation/commit/be6a085fe79b3a84f8be8fa6169ab151ee4ddbc9))
+
+### Build System
+
+- **deps**: Bump playwright to 1.64.1 and the python-version group
+  ([#37](https://github.com/CalebSargeant/afas-automation/pull/37),
+  [`f6f6777`](https://github.com/CalebSargeant/afas-automation/commit/f6f677707b99699797c7128812ec2da39006271f))
+
+
 ## v1.5.4 (2026-11-11)
 
 ### Bug Fixes
