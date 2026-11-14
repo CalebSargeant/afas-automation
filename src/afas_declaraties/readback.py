@@ -32,6 +32,7 @@ STATUS_DRAFT = "Medewerker"
 STATUS_FILED = frozenset({"Leidinggevende", "Akkoord"})
 
 NEXT_PAGE = "Volgende"
+PREVIOUS_PAGE = "Vorige"
 # shortcut: 40 pages hold about 400 lines, some 18 months of claims. It raises when
 # reached, and then the list needs a date filter rather than a bigger number.
 MAX_PAGES = 40
@@ -112,7 +113,7 @@ def parse_lines(text: str) -> list[FiledLine]:
     return list(counts.elements())
 
 
-def _turn_page(page: Page, pager: Locator, text: str) -> str:
+def _turn_page(page: Page, pager: Locator, text: str, name: str) -> str:
     """Click a pager and return the page it brought up.
 
     Only a disabled pager means the end. An enabled one that moves nothing is a slow
@@ -127,11 +128,11 @@ def _turn_page(page: Page, pager: Locator, text: str) -> str:
         if current != text and current == previous:
             return current
         previous = current
-    raise PortalChanged(f"a {NEXT_PAGE!r} pager is enabled but its page never settled")
+    raise PortalChanged(f"a {name!r} pager is enabled but its page never settled")
 
 
-def _live_pagers(page: Page) -> list[Locator]:
-    pagers = page.get_by_role("button", name=NEXT_PAGE)
+def _live_pagers(page: Page, name: str) -> list[Locator]:
+    pagers = page.get_by_role("button", name=name)
     return [
         pager
         for pager in (pagers.nth(i) for i in range(pagers.count()))
@@ -152,8 +153,25 @@ def _settle(page: Page, text: str) -> str:
     raise PortalChanged("the claim list never stopped changing")
 
 
+def _rewind(page: Page, text: str) -> tuple[str, int]:
+    """Every grid back on its first page, and how many pages that took.
+
+    InSite reopens the main grid on the page the session last left it on, so every
+    read after the first in a session starts on its last page.
+    """
+    for back in range(MAX_PAGES):
+        live = _live_pagers(page, PREVIOUS_PAGE)
+        if not live:
+            text = _settle(page, text)
+            live = _live_pagers(page, PREVIOUS_PAGE)
+        if not live:
+            return text, back
+        text = _turn_page(page, live[0], text, PREVIOUS_PAGE)
+    raise PortalChanged(f"the claim list was still paging back after {MAX_PAGES} pages")
+
+
 def read_lines(page: Page, host: str, path: str) -> list[FiledLine]:
-    """Every line on the claim list, across all its pagers.
+    """Every line on the claim list, across all its pagers, from each one's first page.
 
     A page can show its rows before its pager is ready. Taking that for the end
     passes the first page off as the whole list, so a page with nothing to click
@@ -168,15 +186,15 @@ def read_lines(page: Page, host: str, path: str) -> list[FiledLine]:
     # shortcut: a day entered twice is missed if the page break falls between the two,
     # because the same line also comes round again on every page of the other grid.
     seen: Counter[FiledLine] = Counter()
-    text = page.inner_text("body")
+    text, back = _rewind(page, page.inner_text("body"))
     for turned in range(MAX_PAGES):
         seen |= Counter(parse_lines(text))
 
-        live = _live_pagers(page)
+        live = _live_pagers(page, NEXT_PAGE)
         if not live:
             text = _settle(page, text)
             seen |= Counter(parse_lines(text))
-            live = _live_pagers(page)
+            live = _live_pagers(page, NEXT_PAGE)
         if not live:
             # This account has filed before, so an empty list is a failed read.
             if not seen:
@@ -186,13 +204,14 @@ def read_lines(page: Page, host: str, path: str) -> list[FiledLine]:
                 f"{ln.claim_type.value if ln.claim_type else 'other'}/{ln.status}" for ln in lines
             )
             logger.info(
-                "readback: %d line(s) in AFAS on %d page(s) %s",
+                "readback: %d line(s) in AFAS on %d page(s) after paging back %d %s",
                 len(lines),
                 turned + 1,
+                back,
                 dict(sorted(kinds.items())),
             )
             return lines
-        text = _turn_page(page, live[0], text)
+        text = _turn_page(page, live[0], text, NEXT_PAGE)
 
     raise PortalChanged(f"the claim list was still paging after {MAX_PAGES} pages")
 

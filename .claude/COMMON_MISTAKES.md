@@ -588,31 +588,35 @@ it, and a filed day on the unread page looks absent and gets claimed twice. So
 `_turn_page` waits for the page to change and settle, and raises if it never does.
 
 The opposite trap: a page with nothing to click is not the end either, until it
-has stopped changing. A read straight after a submit returned the first page as
-the whole list, in seconds, with no clickable pager found. Cause not proven; the
-rows can be there before the pager is. `read_lines` now waits for `END_POLLS`
-reads in a row without a change before it ends, and logs how many pages it read,
-so a short read shows up as one page where the read before it had several.
+has stopped changing, because rows can render before their pager. `read_lines`
+waits for `END_POLLS` reads in a row without a change before it ends, and logs how
+many pages it read. The short read straight after a submit that prompted this had
+another cause, in the next entry.
 
 ## A later read in the same session can come back short
 
-**Symptom.** None of its own, which is the danger. A build or submit that reads the
-claim list more than once logs fewer lines on a later read than on its first, with
-no error, ending on a page with no clickable pager. The first read of a session has
-held the whole list every time so far.
+**Symptom.** A build or submit that reads the claim list more than once logs fewer
+lines on a later read than on its first, ending on a page with no clickable pager.
+The first read of a session holds the whole list. Behind `complete()` the later read
+raises `PortalChanged` ("came back short"), so a run that reads twice before it
+decides, such as a reconcile followed by a submit, fails every morning.
 
-**Cause.** Not proven. It follows a click in the same session, Aanmaken or insturen.
-A decision taken from such a read sees a filed day it missed as absent, which drafts
-that day again, and a second short read can then file it twice.
+**Cause.** InSite reopens the main grid on the page the session last left it on,
+while the open-declarations grid above it starts on its first page. The first read
+walks the main grid to its last page, so every later read in the session starts
+there: it sees the open grid and the oldest lines, and nothing in between. No click
+is needed, a read straight after another read does it too. The line and page counts
+of every short read logged so far fit this exactly. A decision taken from such a
+read sees a filed day it missed as absent, which drafts that day again, and a
+second short read can then file it twice.
 
-**Fix.** `readback.complete()`: a read that a decision rests on must hold every day
-the ledger has as `submitted`, because a filed line stays on the list. Build's first
-read, `_settle` and `_file`'s first read go through `cli._whole_list()`, and a short
-one raises `PortalChanged`, so that declaration waits for the next run. The reads
-straight after a click are not checked: they only confirm lines they can see, and a
-short read cannot show a line that is not there. Two declarations in one run can
-therefore take two runs. The readback log line breaks its lines down by claim type
-and status, so the next short read says what it was missing.
+**Fix.** `read_lines` clicks *Vorige* until no grid has one left, then reads
+forward, and logs how many pages it went back. `readback.complete()` stays as the
+safety stop: a read that a decision rests on must hold every day the ledger has as
+`submitted`, because a filed line stays on the list. Build's first read, `_settle`
+and `_file`'s first read go through `cli._whole_list()`, and a short one raises
+`PortalChanged`, so that declaration waits for the next run. The reads straight
+after a click are not checked: they only confirm lines they can see.
 
 ## A click on a dry card must not count once live
 
