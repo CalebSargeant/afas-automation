@@ -86,8 +86,6 @@ config:
   # indefensible.
   dryRun: true
 
-  headless: true
-
   # Where the calendar is read from.
   #
   #   owa  drive Outlook Web with Chromium as the signed-in user

@@ -56,7 +56,6 @@ class Reason(enum.StrEnum):
     HUMAN_OVERRIDE = "human_override"
     BOOKING_WITHDRAWN = "booking_withdrawn"  # was frozen office, booking now gone
     CALENDAR_DEGRADED = "calendar_degraded"  # feed unreachable or suspect
-    OUTSIDE_CONTRACT = "outside_contract"  # not a working day per config
 
 
 @dataclass(frozen=True)

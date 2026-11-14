@@ -73,10 +73,6 @@ _WINDOWS_ZONES = {
 }
 
 
-class CalendarUnavailable(RuntimeError):
-    """The calendar could not be read. Never to be confused with an empty one."""
-
-
 def _zone(name: str, *, default: ZoneInfo) -> ZoneInfo:
     if not name:
         return default

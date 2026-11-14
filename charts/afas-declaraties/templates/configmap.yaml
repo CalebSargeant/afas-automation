@@ -23,7 +23,6 @@ data:
   # "true" unless someone has deliberately decided otherwise. False means build
   # creates real drafts in AFAS InSite and submit files what Slack approved.
   DRY_RUN: {{ .Values.config.dryRun | toString | lower | quote }}
-  HEADLESS: {{ .Values.config.headless | toString | lower | quote }}
   # "owa" drives Chromium; "mcp" reads the calendar over the Microsoft 365 MCP
   # connector and needs no browser. Neither value names an employer.
   CALENDAR_SOURCE: {{ .Values.config.calendarSource | quote }}

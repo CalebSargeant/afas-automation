@@ -133,6 +133,7 @@
           ]
         },
         "headless": {
+          "description": "Deprecated and ignored: no workload reads it. Still accepted so existing values files validate.",
           "oneOf": [
             {
               "type": "string",

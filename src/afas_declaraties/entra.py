@@ -31,12 +31,6 @@ SEL_PASSWORD = "input[name='passwd']"
 SEL_PASSWORD_SUBMIT = "input[type='submit'][value='Sign in'], #idSIButton9"
 SEL_TOTP = "input[name='otc']"
 SEL_TOTP_VERIFY = "input[type='submit'][value='Verify'], #idSubmit_SAOTCC_Continue, #idSIButton9"
-# The stay-signed-in step must be identified by something unique to it.
-# #idSIButton9 is Entra's primary submit on nearly every page, so keying off it
-# fires this branch on the password page and submits an empty field.
-SEL_KMSI_MARKER = (
-    "#KmsiCheckboxField, input[type='submit'][value='Ja'], input[type='submit'][value='Yes']"
-)
 SEL_KMSI_SUBMIT = (
     "input[type='submit'][value='Ja'], input[type='submit'][value='Yes'], #idSIButton9"
 )
@@ -314,7 +308,6 @@ def sign_in(page: Page, creds: Credentials, *, timeout_ms: int = 120_000) -> Non
             # preceding page loads would spend most of that window.
             if _fill_verified(page, SEL_TOTP, creds.totp(), label="TOTP"):
                 page.click(SEL_TOTP_VERIFY)
-                typed_password = typed_password
                 _await_inactive(page, SEL_TOTP)
                 logger.info("entra: TOTP submitted")
         elif _choose_code_method(page):
@@ -358,6 +351,9 @@ def _pane_title(page: Page) -> str:
     return ""
 
 
+# The stay-signed-in step must be identified by something unique to it.
+# #idSIButton9 is Entra's primary submit on nearly every page, so keying off it
+# fires this branch on the password page and submits an empty field.
 def _kmsi_button(page: Page):
     """The stay-signed-in confirm, identified by something unique to that pane."""
     for handle in page.query_selector_all(
